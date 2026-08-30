@@ -1,0 +1,21 @@
+[project]
+name = "market-agent"
+version = "0.1.0"
+description = "Google ADK market-analysis gRPC agent"
+requires-python = ">=3.12"
+dependencies = [
+    "distributed-agent-contracts",
+    "google-adk[extensions]>=1.0.0",
+    "exa-py>=1.9.0",
+    "grpcio>=1.68.0",
+    "grpcio-health-checking>=1.68.0",
+    "langsmith>=0.11.0",
+    "python-dotenv>=1.0.0",
+]
+
+[tool.uv.sources]
+distributed-agent-contracts = { workspace = true }
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

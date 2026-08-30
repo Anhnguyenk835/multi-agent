@@ -1,0 +1,4 @@
+project_id = "replace-with-your-gcp-project-id"
+region     = "asia-southeast1"
+
+image = "asia-southeast1-docker.pkg.dev/replace-with-your-gcp-project-id/market-agent/market-agent:dev"

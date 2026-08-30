@@ -1,0 +1,133 @@
+name: distributed-agents-demo
+
+services:
+  orchestrator:
+    build:
+      context: .
+      dockerfile: services/orchestrator/Dockerfile
+    env_file:
+      - services/orchestrator/.env
+    environment:
+      ANALYST_URL: http://analyst:8002
+      CHECKPOINT_DATABASE_URL: postgresql://distributed_agents:distributed_agents@postgres:5432/distributed_agents?sslmode=disable
+      ANALYST_BACKOFF_SECONDS: ${ORCHESTRATOR_ANALYST_BACKOFF_SECONDS:-0.1}
+      ANALYST_MAX_ATTEMPTS: ${ORCHESTRATOR_ANALYST_MAX_ATTEMPTS:-2}
+      ANALYST_TIMEOUT_SECONDS: ${ORCHESTRATOR_ANALYST_TIMEOUT_SECONDS:-15}
+      MARKET_AGENT_ADDRESS: market-agent:50051
+      MARKET_BACKOFF_SECONDS: ${ORCHESTRATOR_MARKET_BACKOFF_SECONDS:-0.1}
+      MARKET_MAX_ATTEMPTS: ${ORCHESTRATOR_MARKET_MAX_ATTEMPTS:-2}
+      MARKET_TIMEOUT_SECONDS: ${ORCHESTRATOR_MARKET_TIMEOUT_SECONDS:-20}
+      RESEARCHER_BACKOFF_SECONDS: ${ORCHESTRATOR_RESEARCHER_BACKOFF_SECONDS:-0.1}
+      RESEARCHER_MAX_ATTEMPTS: ${ORCHESTRATOR_RESEARCHER_MAX_ATTEMPTS:-2}
+      RESEARCHER_TIMEOUT_SECONDS: ${ORCHESTRATOR_RESEARCHER_TIMEOUT_SECONDS:-20}
+      RESEARCHER_URL: http://researcher:8001
+      WRITER_BACKOFF_SECONDS: ${ORCHESTRATOR_WRITER_BACKOFF_SECONDS:-0.1}
+      WRITER_MAX_ATTEMPTS: ${ORCHESTRATOR_WRITER_MAX_ATTEMPTS:-2}
+      WRITER_TIMEOUT_SECONDS: ${ORCHESTRATOR_WRITER_TIMEOUT_SECONDS:-15}
+      WRITER_URL: http://writer:8003
+    ports:
+      - "8000:8000"
+    depends_on:
+      researcher:
+        condition: service_healthy
+      market-agent:
+        condition: service_healthy
+      analyst:
+        condition: service_healthy
+      writer:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/ready')"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: distributed_agents
+      POSTGRES_PASSWORD: distributed_agents
+      POSTGRES_USER: distributed_agents
+    ports:
+      - "5434:5432"
+    volumes:
+      - orchestrator-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U distributed_agents -d distributed_agents"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  researcher:
+    build:
+      context: .
+      dockerfile: services/researcher/Dockerfile
+    ports:
+      - "8001:8001"
+    env_file:
+      - services/researcher/.env
+    environment:
+      DEMO_FAILURE_DELAY_MS: ${RESEARCHER_FAILURE_DELAY_MS:-250}
+      DEMO_FAILURE_MODE: ${RESEARCHER_FAILURE_MODE:-none}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/ok')"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 10s
+
+  market-agent:
+    build:
+      context: .
+      dockerfile: services/market-agent/Dockerfile
+    ports:
+      - "50051:50051"
+    env_file:
+      - services/market-agent/.env
+    environment:
+      DEMO_FAILURE_DELAY_MS: ${MARKET_FAILURE_DELAY_MS:-250}
+      DEMO_FAILURE_MODE: ${MARKET_FAILURE_MODE:-none}
+    healthcheck:
+      test: ["CMD", "uv", "run", "--frozen", "--package", "market-agent", "python", "-c", "import grpc; from grpc_health.v1 import health_pb2, health_pb2_grpc; channel = grpc.insecure_channel('localhost:50051'); response = health_pb2_grpc.HealthStub(channel).Check(health_pb2.HealthCheckRequest(), timeout=2); assert response.status == health_pb2.HealthCheckResponse.SERVING"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  analyst:
+    build:
+      context: .
+      dockerfile: services/analyst/Dockerfile
+    ports:
+      - "8002:8002"
+    env_file:
+      - services/analyst/.env
+    environment:
+      DEMO_FAILURE_DELAY_MS: ${ANALYST_FAILURE_DELAY_MS:-250}
+      DEMO_FAILURE_MODE: ${ANALYST_FAILURE_MODE:-none}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8002/ready')"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  writer:
+    build:
+      context: .
+      dockerfile: services/writer/Dockerfile
+    ports:
+      - "8003:8003"
+    env_file:
+      - services/writer/.env
+    environment:
+      DEMO_FAILURE_DELAY_MS: ${WRITER_FAILURE_DELAY_MS:-250}
+      DEMO_FAILURE_MODE: ${WRITER_FAILURE_MODE:-none}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8003/ready')"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+volumes:
+  orchestrator-postgres-data:

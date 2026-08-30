@@ -1,0 +1,26 @@
+[project]
+name = "orchestrator"
+version = "0.1.0"
+description = "LangGraph workflow orchestrator"
+requires-python = ">=3.12"
+dependencies = [
+    "distributed-agent-contracts",
+    "fastapi>=0.115.0",
+    "grpcio>=1.83.1",
+    "httpx>=0.28.0",
+    "langgraph>=0.2.0",
+    "langgraph-checkpoint-postgres>=3.0.0",
+    "langsmith>=0.11.0",
+    "psycopg[binary,pool]>=3.2.0",
+    "pydantic>=2.10.0",
+    "protobuf>=7.35.1",
+    "python-dotenv>=1.0.0",
+    "uvicorn>=0.32.0",
+]
+
+[tool.uv.sources]
+distributed-agent-contracts = { workspace = true }
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

@@ -1,0 +1,24 @@
+[project]
+name = "researcher"
+version = "0.1.0"
+description = "LangGraph remote research agent"
+requires-python = ">=3.12"
+dependencies = [
+    "distributed-agent-contracts",
+    "exa-py>=1.9.0",
+    "langchain>=1.0.0",
+    "langchain-openai>=0.2.0",
+    "langgraph>=0.2.0",
+    "langgraph-cli[inmem]>=0.4.0",
+    "langsmith>=0.11.0",
+    "openai>=1.54.0",
+    "pydantic>=2.10.0",
+    "python-dotenv>=1.0.0",
+]
+
+[tool.uv.sources]
+distributed-agent-contracts = { workspace = true }
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

@@ -1,0 +1,6 @@
+project_id = "replace-with-your-gcp-project-id"
+region     = "asia-southeast1"
+
+# Build & push first: gcloud builds submit --tag <artifact_registry_repository>/analyst:dev
+# (run `terraform apply` once with a placeholder image to create the repo first)
+image = "asia-southeast1-docker.pkg.dev/replace-with-your-gcp-project-id/analyst/analyst:dev"

@@ -1,0 +1,33 @@
+[project]
+name = "distributed-agents-demo"
+version = "0.1.0"
+description = "Distributed AI agents demo workspace"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = []
+
+[dependency-groups]
+dev = [
+    "httpx>=0.28.0",
+    "grpcio-tools>=1.68.0",
+    "pytest>=8.3.0",
+    "ruff>=0.8.0",
+]
+
+[tool.uv.workspace]
+members = [
+    "services/*",
+    "packages/*",
+]
+
+[tool.ruff]
+extend-exclude = [
+    "packages/contracts/src/distributed_agent_contracts/market/v1/*_pb2*.py",
+]
+line-length = 100
+target-version = "py312"
+
+[tool.pytest.ini_options]
+addopts = ["--import-mode=importlib"]
+testpaths = ["services", "packages", "tests"]
+markers = ["integration: requires the local Docker Compose stack"]

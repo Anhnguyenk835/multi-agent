@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.pytest_cache/
+.ruff_cache/
+
+# Environment — real credentials never committed, only .env.example
+.env
+.env.*
+!.env.example
+
+# Terraform — provider binaries, local state (contains plaintext secret
+# values despite `sensitive = true`), and real tfvars never committed
+infra/**/.terraform/
+infra/**/terraform.tfstate
+infra/**/terraform.tfstate.*
+infra/**/*.tfvars
+!infra/**/*.tfvars.example
+infra/**/crash.log
+infra/**/override.tf
+infra/**/override.tf.json
+
+# OS
+.DS_Store
