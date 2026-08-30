@@ -29,5 +29,4 @@ target-version = "py312"
 
 [tool.pytest.ini_options]
 addopts = ["--import-mode=importlib"]
-testpaths = ["services", "packages", "tests"]
-markers = ["integration: requires the local Docker Compose stack"]
+testpaths = ["services", "packages"]

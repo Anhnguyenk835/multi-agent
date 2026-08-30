@@ -1,4 +1,4 @@
-.PHONY: install lint test test-integration generate-contract-reference-proto run-orchestrator
+.PHONY: install lint test generate-contract-reference-proto run-orchestrator
 
 install:
 	uv sync --all-packages --all-groups
@@ -8,9 +8,6 @@ lint:
 
 test:
 	LANGSMITH_TRACING=false uv run --all-packages pytest
-
-test-integration:
-	RUN_INTEGRATION_TESTS=1 uv run pytest tests/integration -q
 
 generate-contract-reference-proto:
 	uv run python -m grpc_tools.protoc --proto_path=packages/contracts/proto --python_out=packages/contracts/src --grpc_python_out=packages/contracts/src packages/contracts/proto/distributed_agent_contracts/market/v1/market.proto

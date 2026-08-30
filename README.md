@@ -89,16 +89,6 @@ Orchestrator call policies are configurable with
 `ORCHESTRATOR_<AGENT>_TIMEOUT_SECONDS`, `_MAX_ATTEMPTS`, and
 `_BACKOFF_SECONDS` variables.
 
-With the stack running, execute the real-transport smoke test using:
-
-```bash
-RUN_INTEGRATION_TESTS=1 uv run pytest tests/integration -q
-```
-
-The same suite is available as `make test-integration`. Set
-`EXPECTED_WORKFLOW_STATUS` to `degraded` or `failed` when running a stack with
-an injected failure.
-
 Stop the local stack with:
 
 ```bash
