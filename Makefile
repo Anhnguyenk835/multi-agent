@@ -7,7 +7,7 @@ lint:
 	uv run ruff check .
 
 test:
-	LANGSMITH_TRACING=false uv run --all-packages pytest
+	uv run --all-packages pytest
 
 generate-contract-reference-proto:
 	uv run python -m grpc_tools.protoc --proto_path=packages/contracts/proto --python_out=packages/contracts/src --grpc_python_out=packages/contracts/src packages/contracts/proto/distributed_agent_contracts/market/v1/market.proto

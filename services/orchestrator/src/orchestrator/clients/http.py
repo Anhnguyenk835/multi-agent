@@ -13,7 +13,6 @@ from distributed_agent_contracts import (
 from pydantic import ValidationError
 
 from orchestrator.errors import AgentCallError
-from orchestrator.langsmith_tracing import current_headers
 
 
 class AnalystClient:
@@ -61,7 +60,7 @@ class WriterClient:
                 "POST",
                 self._stream_url,
                 json=request.model_dump(mode="json"),
-                headers={**current_headers(), "Accept": "text/event-stream"},
+                headers={"Accept": "text/event-stream"},
             ) as response:
                 if response.status_code >= 400:
                     raise _http_status_error("Writer", response.status_code)
@@ -104,7 +103,7 @@ class WriterClient:
 
 async def _post(client: httpx.AsyncClient, url: str, payload: dict[str, object]) -> httpx.Response:
     try:
-        return await client.post(url, json=payload, headers=current_headers())
+        return await client.post(url, json=payload)
     except httpx.TimeoutException as error:
         raise AgentCallError(
             ErrorCode.DEADLINE_EXCEEDED,

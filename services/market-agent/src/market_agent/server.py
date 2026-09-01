@@ -9,7 +9,6 @@ from market_agent.errors import (
     ProviderConfigurationError,
     ProviderUnavailableError,
 )
-from market_agent.langsmith_tracing import trace_operation
 from market_agent.runner import MarketAgentRunner
 from market_agent.settings import DemoSettings, FailureMode
 
@@ -25,78 +24,61 @@ class MarketAgentService(market_pb2_grpc.MarketAgentServicer):
 
     async def AnalyzeMarket(self, request, context):
         metadata = request.metadata
-        parent_headers = dict(context.invocation_metadata())
-        with trace_operation(
-            "market-agent.analyze",
-            metadata={
-                "service": "market-agent",
-                "request_id": metadata.request_id,
-                "business_trace_id": metadata.trace_id,
-                "attempt": metadata.attempt,
-                "query_length": len(request.query),
-            },
-            parent_headers=parent_headers,
-            inputs={"request": {"metadata": _metadata_dict(metadata), "query": request.query}},
-        ) as run:
-            if (
-                metadata.contract_version != "v1"
-                or not metadata.request_id
-                or not metadata.trace_id
-                or metadata.attempt < 1
-                or not request.query.strip()
-            ):
-                await context.abort(grpc.StatusCode.INVALID_ARGUMENT, "invalid market request")
+        if (
+            metadata.contract_version != "v1"
+            or not metadata.request_id
+            or not metadata.trace_id
+            or metadata.attempt < 1
+            or not request.query.strip()
+        ):
+            await context.abort(grpc.StatusCode.INVALID_ARGUMENT, "invalid market request")
 
-            await self._settings.apply_delay()
-            if self._settings.failure_mode is FailureMode.TRANSIENT_ERROR:
-                await context.abort(grpc.StatusCode.UNAVAILABLE, "injected transient failure")
-            if self._settings.failure_mode is FailureMode.INVALID_RESPONSE:
-                return market_pb2.MarketResponse(
-                    metadata=metadata,
-                    status=market_pb2.RESPONSE_STATUS_UNSPECIFIED,
-                )
-
-            try:
-                result = await self._runner.analyze(request.query, metadata.request_id)
-            except ProviderConfigurationError:
-                response = _failure_response(
-                    metadata,
-                    market_pb2.ERROR_CODE_INTERNAL_ERROR,
-                    "Market Agent provider configuration is invalid",
-                    retryable=False,
-                )
-                return _end_run(run, response)
-            except ProviderUnavailableError:
-                response = _failure_response(
-                    metadata,
-                    market_pb2.ERROR_CODE_UPSTREAM_UNAVAILABLE,
-                    "Market Agent LLM provider is unavailable",
-                    retryable=True,
-                )
-                return _end_run(run, response)
-            except InvalidOutputError:
-                response = _failure_response(
-                    metadata,
-                    market_pb2.ERROR_CODE_UPSTREAM_INVALID_RESPONSE,
-                    "Market Agent returned invalid structured output",
-                    retryable=False,
-                )
-                return _end_run(run, response)
-            signals = [
-                market_pb2.MarketSignal(
-                    topic=signal["topic"],
-                    observation=signal["observation"],
-                    source=market_pb2.Source(**signal["source"]),
-                )
-                for signal in result.market_signals
-            ]
-            response = market_pb2.MarketResponse(
+        await self._settings.apply_delay()
+        if self._settings.failure_mode is FailureMode.TRANSIENT_ERROR:
+            await context.abort(grpc.StatusCode.UNAVAILABLE, "injected transient failure")
+        if self._settings.failure_mode is FailureMode.INVALID_RESPONSE:
+            return market_pb2.MarketResponse(
                 metadata=metadata,
-                status=market_pb2.RESPONSE_STATUS_SUCCESS,
-                market_signals=signals,
-                competitors=result.competitors,
+                status=market_pb2.RESPONSE_STATUS_UNSPECIFIED,
             )
-            return _end_run(run, response)
+
+        try:
+            result = await self._runner.analyze(request.query, metadata.request_id)
+        except ProviderConfigurationError:
+            return _failure_response(
+                metadata,
+                market_pb2.ERROR_CODE_INTERNAL_ERROR,
+                "Market Agent provider configuration is invalid",
+                retryable=False,
+            )
+        except ProviderUnavailableError:
+            return _failure_response(
+                metadata,
+                market_pb2.ERROR_CODE_UPSTREAM_UNAVAILABLE,
+                "Market Agent LLM provider is unavailable",
+                retryable=True,
+            )
+        except InvalidOutputError:
+            return _failure_response(
+                metadata,
+                market_pb2.ERROR_CODE_UPSTREAM_INVALID_RESPONSE,
+                "Market Agent returned invalid structured output",
+                retryable=False,
+            )
+        signals = [
+            market_pb2.MarketSignal(
+                topic=signal["topic"],
+                observation=signal["observation"],
+                source=market_pb2.Source(**signal["source"]),
+            )
+            for signal in result.market_signals
+        ]
+        return market_pb2.MarketResponse(
+            metadata=metadata,
+            status=market_pb2.RESPONSE_STATUS_SUCCESS,
+            market_signals=signals,
+            competitors=result.competitors,
+        )
 
 
 async def create_server(
@@ -125,55 +107,6 @@ async def serve() -> None:
     server, _ = await create_server()
     await server.start()
     await server.wait_for_termination()
-
-
-def _metadata_dict(metadata) -> dict[str, object]:
-    return {
-        "contract_version": metadata.contract_version,
-        "request_id": metadata.request_id,
-        "trace_id": metadata.trace_id,
-        "attempt": metadata.attempt,
-        "deadline_unix_ms": metadata.deadline_unix_ms,
-    }
-
-
-def _end_run(run, response):
-    if run is not None:
-        run.end(outputs={"response": _response_output(response)})
-    return response
-
-
-def _response_output(response) -> dict[str, object]:
-    return {
-        "metadata": _metadata_dict(response.metadata),
-        "status": market_pb2.ResponseStatus.Name(response.status),
-        "market_signals": [
-            {
-                "topic": signal.topic,
-                "observation": signal.observation,
-                "source": {
-                    "title": signal.source.title,
-                    "url": signal.source.url,
-                    "publisher": signal.source.publisher,
-                    "published_at_unix_ms": signal.source.published_at_unix_ms,
-                    "retrieved_at_unix_ms": signal.source.retrieved_at_unix_ms,
-                    "content": signal.source.content,
-                },
-            }
-            for signal in response.market_signals
-        ],
-        "competitors": list(response.competitors),
-        "warnings": list(response.warnings),
-        "error": (
-            {
-                "code": market_pb2.ErrorCode.Name(response.error.code),
-                "message": response.error.message,
-                "retryable": response.error.retryable,
-            }
-            if response.HasField("error")
-            else None
-        ),
-    }
 
 
 def _failure_response(metadata, code: int, message: str, *, retryable: bool):

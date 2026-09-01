@@ -6,11 +6,9 @@ from functools import lru_cache
 from time import monotonic
 
 import openai
-from langsmith.wrappers import wrap_openai
 from pydantic import BaseModel, ValidationError
 
 from writer.errors import InvalidOutputError, ProviderConfigurationError, ProviderUnavailableError
-from writer.langsmith_tracing import trace_operation
 from writer.settings import WriterAISettings
 
 logger = logging.getLogger("writer.llm_client")
@@ -27,8 +25,7 @@ class StructuredStreamChunk[T: BaseModel]:
 
 @lru_cache(maxsize=1)
 def _default_openai_client(settings: WriterAISettings) -> openai.AsyncOpenAI:
-    # wrap_openai adds a traced "ChatOpenAI" child run with token usage.
-    return wrap_openai(openai.AsyncOpenAI(api_key=settings.openai_api_key))
+    return openai.AsyncOpenAI(api_key=settings.openai_api_key)
 
 
 def _log_telemetry(model: str, latency_seconds: float, outcome: str, error_type: str | None) -> None:
@@ -42,19 +39,6 @@ def _log_telemetry(model: str, latency_seconds: float, outcome: str, error_type:
             "error_type": error_type,
         },
     )
-
-
-def _safe_usage(response: object) -> dict[str, int]:
-    usage = getattr(response, "usage", None)
-    return {
-        key: value
-        for key, value in {
-            "input_tokens": getattr(usage, "prompt_tokens", None),
-            "output_tokens": getattr(usage, "completion_tokens", None),
-            "total_tokens": getattr(usage, "total_tokens", None),
-        }.items()
-        if isinstance(value, int)
-    }
 
 
 def _messages(system_prompt: str, user_prompt: str) -> list[dict[str, str]]:
@@ -99,47 +83,27 @@ async def generate_structured[T: BaseModel](
     client = (client_factory or _default_openai_client)(settings)
     model = settings.openai_model
     started = monotonic()
-    with trace_operation(
-        "writer.llm",
-        metadata={"service": "writer", "provider": "openai", "model": model, "schema": schema.__name__},
-        run_type="llm",
-        inputs={
-            "provider": "openai",
-            "model": model,
-            "response_format": "json_schema",
-            "messages": _messages(system_prompt, user_prompt),
-        },
-    ) as run:
-        try:
-            response = await client.chat.completions.create(
-                model=model,
-                messages=_messages(system_prompt, user_prompt),
-                response_format=_json_schema_response_format(schema),
-                timeout=settings.llm_timeout_seconds,
-            )
-        except _NO_RETRY as exc:
-            _log_telemetry(model, monotonic() - started, "rejected", type(exc).__name__)
-            raise ProviderConfigurationError(f"openai rejected the request: {exc}") from exc
-        except Exception as exc:
-            _log_telemetry(model, monotonic() - started, "unavailable", type(exc).__name__)
-            raise ProviderUnavailableError(f"openai is unavailable: {exc}") from exc
+    try:
+        response = await client.chat.completions.create(
+            model=model,
+            messages=_messages(system_prompt, user_prompt),
+            response_format=_json_schema_response_format(schema),
+            timeout=settings.llm_timeout_seconds,
+        )
+    except _NO_RETRY as exc:
+        _log_telemetry(model, monotonic() - started, "rejected", type(exc).__name__)
+        raise ProviderConfigurationError(f"openai rejected the request: {exc}") from exc
+    except Exception as exc:
+        _log_telemetry(model, monotonic() - started, "unavailable", type(exc).__name__)
+        raise ProviderUnavailableError(f"openai is unavailable: {exc}") from exc
 
-        content = response.choices[0].message.content
-        if not content:
-            _log_telemetry(model, monotonic() - started, "unavailable", "EmptyCompletion")
-            raise ProviderUnavailableError("openai returned an empty completion")
+    content = response.choices[0].message.content
+    if not content:
+        _log_telemetry(model, monotonic() - started, "unavailable", "EmptyCompletion")
+        raise ProviderUnavailableError("openai returned an empty completion")
 
-        _log_telemetry(model, monotonic() - started, "success", None)
-        if run is not None:
-            run.end(
-                outputs={
-                    "status": "success",
-                    "response_format": "json_schema",
-                    "content": content,
-                    "usage_metadata": _safe_usage(response),
-                }
-            )
-        return _parse(schema, content, model)
+    _log_telemetry(model, monotonic() - started, "success", None)
+    return _parse(schema, content, model)
 
 
 async def generate_structured_stream[T: BaseModel](
@@ -162,52 +126,30 @@ async def generate_structured_stream[T: BaseModel](
     model = settings.openai_model
     started = monotonic()
     parts: list[str] = []
-    with trace_operation(
-        "writer.llm",
-        metadata={"service": "writer", "provider": "openai", "model": model, "schema": schema.__name__},
-        run_type="llm",
-        inputs={
-            "provider": "openai",
-            "model": model,
-            "response_format": "json_schema",
-            "streaming": True,
-            "messages": _messages(system_prompt, user_prompt),
-        },
-    ) as run:
-        try:
-            stream = await client.chat.completions.create(
-                model=model,
-                messages=_messages(system_prompt, user_prompt),
-                response_format=_json_schema_response_format(schema),
-                stream=True,
-                timeout=settings.llm_timeout_seconds,
-            )
-            async for chunk in stream:
-                content = chunk.choices[0].delta.content if chunk.choices else None
-                if content:
-                    parts.append(content)
-                    yield StructuredStreamChunk[T](kind="raw_delta", text=content)
-        except _NO_RETRY as exc:
-            _log_telemetry(model, monotonic() - started, "rejected", type(exc).__name__)
-            raise ProviderConfigurationError(f"openai rejected the request: {exc}") from exc
-        except Exception as exc:
-            _log_telemetry(model, monotonic() - started, "unavailable", type(exc).__name__)
-            raise ProviderUnavailableError(f"openai is unavailable: {exc}") from exc
+    try:
+        stream = await client.chat.completions.create(
+            model=model,
+            messages=_messages(system_prompt, user_prompt),
+            response_format=_json_schema_response_format(schema),
+            stream=True,
+            timeout=settings.llm_timeout_seconds,
+        )
+        async for chunk in stream:
+            content = chunk.choices[0].delta.content if chunk.choices else None
+            if content:
+                parts.append(content)
+                yield StructuredStreamChunk[T](kind="raw_delta", text=content)
+    except _NO_RETRY as exc:
+        _log_telemetry(model, monotonic() - started, "rejected", type(exc).__name__)
+        raise ProviderConfigurationError(f"openai rejected the request: {exc}") from exc
+    except Exception as exc:
+        _log_telemetry(model, monotonic() - started, "unavailable", type(exc).__name__)
+        raise ProviderUnavailableError(f"openai is unavailable: {exc}") from exc
 
-        content = "".join(parts)
-        if not content:
-            _log_telemetry(model, monotonic() - started, "unavailable", "EmptyCompletion")
-            raise ProviderUnavailableError("openai returned an empty completion")
-
-        if run is not None:
-            run.end(
-                outputs={
-                    "status": "success",
-                    "streaming": True,
-                    "chunk_count": len(parts),
-                    "content": content,
-                }
-            )
+    content = "".join(parts)
+    if not content:
+        _log_telemetry(model, monotonic() - started, "unavailable", "EmptyCompletion")
+        raise ProviderUnavailableError("openai returned an empty completion")
 
     _log_telemetry(model, monotonic() - started, "success", None)
     yield StructuredStreamChunk[T](kind="completed", result=_parse(schema, content, model))

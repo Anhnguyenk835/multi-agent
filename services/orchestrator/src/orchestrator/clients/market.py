@@ -12,7 +12,6 @@ from distributed_agent_contracts.market.v1 import market_pb2, market_pb2_grpc
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from orchestrator.errors import AgentCallError
-from orchestrator.langsmith_tracing import current_headers
 
 
 class MarketAgentRequest(RequestMetadata):
@@ -44,9 +43,7 @@ class MarketClient:
             query=request.query,
         )
         try:
-            response = await self._stub.AnalyzeMarket(
-                proto_request, metadata=tuple(current_headers().items())
-            )
+            response = await self._stub.AnalyzeMarket(proto_request)
         except grpc.aio.AioRpcError as error:
             raise _grpc_error(error) from error
 

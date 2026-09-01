@@ -24,8 +24,7 @@ flowchart TD
 - Final answer is a call to a synthetic `submit_market_analysis` tool, not
   `output_schema`, matching the tag-grounding pattern used by Researcher.
 - ADK has no native OpenAI client — `LiteLlm` (backed by `litellm`) is the
-  only supported bridge, so `litellm_langsmith.py` still instruments it
-  even though there's a single provider.
+  supported bridge for the configured OpenAI model.
 
 | File | Responsibility |
 | --- | --- |

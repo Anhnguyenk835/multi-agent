@@ -23,13 +23,12 @@ flowchart TD
 
 ```text
 1. Orchestrator calls the `researcher` RemoteGraph with request and trace IDs.
-2. LangGraph Server accepts the LangSmith distributed-trace context.
-3. `run_react_agent` creates a request-local LangChain agent and Exa tool.
-4. The model decides whether to call `search`; middleware limits it to 3 calls.
-5. Each search result receives a stable tag: {tool_call_id}#{position}.
-6. The model submits `LLMFindingsResponse` containing only source tags.
-7. Researcher resolves tags against tool messages and builds source objects itself.
-8. Researcher returns a schema-validated `ResearcherOutput`; unknown tags fail.
+2. `run_react_agent` creates a request-local LangChain agent and Exa tool.
+3. The model decides whether to call `search`; middleware limits it to 3 calls.
+4. Each search result receives a stable tag: {tool_call_id}#{position}.
+5. The model submits `LLMFindingsResponse` containing only source tags.
+6. Researcher resolves tags against tool messages and builds source objects itself.
+7. Researcher returns a schema-validated `ResearcherOutput`; unknown tags fail.
 ```
 
 - `AI_MODE=fixture` (default): two hardcoded findings, no API keys.
@@ -39,8 +38,7 @@ flowchart TD
 - `ToolCallLimitMiddleware` caps search at 3 calls; the model submits via a
   synthetic `LLMFindingsResponse` tool call, not free text.
 - OpenAI via `langchain_openai.ChatOpenAI`.
-- LangSmith trace context travels from Orchestrator through `RemoteGraph`;
-  the Researcher branch contains `researcher → run_react_agent → model/search`.
+- `request_id` and `trace_id` remain in the service contract for correlation.
 
 | File | Responsibility |
 | --- | --- |

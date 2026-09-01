@@ -67,14 +67,6 @@ resource "google_secret_manager_secret_iam_member" "checkpoint_database_url_acce
   member    = "serviceAccount:${google_service_account.runtime.email}"
 }
 
-module "secrets" {
-  source                         = "../../modules/secrets"
-  project_id                     = var.project_id
-  name_prefix                    = "orchestrator-"
-  secret_names                   = ["LANGSMITH_API_KEY"]
-  accessor_service_account_email = google_service_account.runtime.email
-}
-
 locals {
   # Cloud Run always terminates TLS at its ingress, so the gRPC address the
   # orchestrator dials must drop the https:// scheme and use the TLS port.
@@ -101,14 +93,9 @@ module "cloud_run" {
     ANALYST_URL                  = var.analyst_url
     WRITER_URL                   = var.writer_url
     ORCHESTRATOR_ALLOWED_ORIGINS = var.allowed_origins
-    LANGSMITH_TRACING            = "true"
-    LANGSMITH_PROJECT            = "distributed-agents-demo"
-    LANGSMITH_HIDE_INPUTS        = "false"
-    LANGSMITH_HIDE_OUTPUTS       = "false"
   }
 
   secret_env_vars = {
     CHECKPOINT_DATABASE_URL = google_secret_manager_secret.checkpoint_database_url.secret_id
-    LANGSMITH_API_KEY       = module.secrets.secret_ids["LANGSMITH_API_KEY"]
   }
 }

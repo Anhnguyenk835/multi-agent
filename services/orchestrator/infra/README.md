@@ -33,14 +33,6 @@ terraform init
 # Phase 1 — image repo and empty secret containers only.
 terraform apply -target=module.artifact_registry -target=module.secrets
 
-# Seed secrets. Secret Manager IDs are unique per project, so each service
-# prefixes its own (orchestrator-*) to avoid colliding with the other services.
-# Values can come straight from this service's local .env:
-for KEY in LANGSMITH_API_KEY; do
-  grep "^$KEY=" ../../../.env | cut -d= -f2- | tr -d '\n' \
-    | gcloud secrets versions add "orchestrator-$KEY" --data-file=-
-done
-
 # Phase 2 — Cloud SQL, the database-URL secret, and the Cloud Run service.
 terraform apply
 ```

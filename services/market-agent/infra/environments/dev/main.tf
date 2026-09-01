@@ -31,7 +31,7 @@ module "secrets" {
   source                         = "../../modules/secrets"
   project_id                     = var.project_id
   name_prefix                    = "market-agent-"
-  secret_names                   = ["OPENAI_API_KEY", "EXA_API_KEY", "LANGSMITH_API_KEY"]
+  secret_names                   = ["OPENAI_API_KEY", "EXA_API_KEY"]
   accessor_service_account_email = google_service_account.runtime.email
 }
 
@@ -56,15 +56,10 @@ module "cloud_run" {
     EXA_MAX_RESULTS            = "8"
     EXA_CONTENT_MAX_CHARACTERS = "4000"
     DEMO_FAILURE_MODE          = "none"
-    LANGSMITH_TRACING          = "true"
-    LANGSMITH_PROJECT          = "distributed-agents-demo"
-    LANGSMITH_HIDE_INPUTS      = "false"
-    LANGSMITH_HIDE_OUTPUTS     = "false"
   }
 
   secret_env_vars = {
     OPENAI_API_KEY    = module.secrets.secret_ids["OPENAI_API_KEY"]
     EXA_API_KEY       = module.secrets.secret_ids["EXA_API_KEY"]
-    LANGSMITH_API_KEY = module.secrets.secret_ids["LANGSMITH_API_KEY"]
   }
 }

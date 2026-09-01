@@ -31,15 +31,6 @@ its own dependencies and owns the boundary schemas it produces or consumes.
 `packages/contracts` is retained as a future reference artifact; no service
 imports it at runtime.
 
-## LangSmith tracing
-
-Set `LANGSMITH_TRACING=true` and provide `LANGSMITH_API_KEY` to trace one
-workflow across Orchestrator, Researcher, Market Agent, Analyst, and Writer.
-The Orchestrator propagates LangSmith context through RemoteGraph, gRPC, and
-HTTPS. Compose sets `LANGSMITH_HIDE_INPUTS=true` and
-`LANGSMITH_HIDE_OUTPUTS=true`, so traces retain hierarchy and safe metadata
-without recording raw prompts or responses.
-
 ## Local Docker
 
 Start the service containers with:

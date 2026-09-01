@@ -6,7 +6,6 @@ from urllib.parse import urlparse
 from exa_py import AsyncExa
 from google.adk.tools import ToolContext
 
-from market_agent.langsmith_tracing import trace_operation
 from market_agent.settings import MarketExaSettings
 
 MAX_SEARCH_CALLS = 3
@@ -71,39 +70,30 @@ def build_search_function(
                 ),
             }
 
-        with trace_operation(
-            "market-agent.search",
-            metadata={"service": "market-agent", "call": call_count, "query_length": len(query)},
-            run_type="tool",
-            inputs={"query": query, "max_results": settings.exa_max_results},
-        ) as run:
-            response = await client.search(
-                query,
-                num_results=settings.exa_max_results,
-                contents={"text": {"maxCharacters": settings.exa_content_max_characters}},
-            )
+        response = await client.search(
+            query,
+            num_results=settings.exa_max_results,
+            contents={"text": {"maxCharacters": settings.exa_content_max_characters}},
+        )
 
-            retrieved_at = datetime.now(UTC).isoformat()
-            results: list[dict[str, object]] = []
-            for position, result in enumerate(response.results[: settings.exa_max_results]):
-                content = result.text or ""
-                if not content:
-                    continue
-                results.append(
-                    {
-                        "tag": f"{tool_context.function_call_id}#{position}",
-                        "title": result.title or result.url,
-                        "url": result.url,
-                        "publisher": _publisher_from_url(result.url),
-                        "published_at": result.published_date,
-                        "retrieved_at": retrieved_at,
-                        "content": content,
-                    }
-                )
-            output = {"results": results}
-            if run is not None:
-                run.end(outputs=output)
-            return output
+        retrieved_at = datetime.now(UTC).isoformat()
+        results: list[dict[str, object]] = []
+        for position, result in enumerate(response.results[: settings.exa_max_results]):
+            content = result.text or ""
+            if not content:
+                continue
+            results.append(
+                {
+                    "tag": f"{tool_context.function_call_id}#{position}",
+                    "title": result.title or result.url,
+                    "url": result.url,
+                    "publisher": _publisher_from_url(result.url),
+                    "published_at": result.published_date,
+                    "retrieved_at": retrieved_at,
+                    "content": content,
+                }
+            )
+        return {"results": results}
 
     return search
 

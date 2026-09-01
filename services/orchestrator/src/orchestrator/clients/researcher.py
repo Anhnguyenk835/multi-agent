@@ -19,23 +19,15 @@ from langgraph_sdk.errors import (
 from pydantic import ValidationError
 
 from orchestrator.errors import AgentCallError
-from orchestrator.langsmith_tracing import current_headers
 
 
 class ResearcherClient:
     def __init__(self, url: str) -> None:
-        # Without this, LangGraph Server starts a separate root trace instead
-        # of joining the active LangSmith run tree.
-        self._graph = RemoteGraph("researcher", url=url, distributed_tracing=True)
+        self._graph = RemoteGraph("researcher", url=url)
 
     async def analyze(self, request: ResearcherInput) -> ResearcherOutput:
         try:
-            headers = current_headers()
-            payload = await self._graph.ainvoke(
-                request.model_dump(mode="json"),
-                config=_remote_trace_config(headers),
-                headers=headers,
-            )
+            payload = await self._graph.ainvoke(request.model_dump(mode="json"))
             response = ResearcherOutput.model_validate(payload)
         except (ValidationError, APIResponseValidationError) as error:
             raise AgentCallError(
@@ -63,12 +55,9 @@ class ResearcherClient:
     ) -> ResearcherOutput:
         final: ResearcherOutput | None = None
         try:
-            headers = current_headers()
             async for chunk in self._graph.astream(
                 request.model_dump(mode="json"),
-                config=_remote_trace_config(headers),
                 stream_mode=["custom", "values"],
-                headers=headers,
                 version="v2",
             ):
                 if chunk["type"] == "custom":
@@ -150,13 +139,3 @@ def _validate_correlation(request: ResearcherInput, response: ResearcherOutput) 
             "Researcher returned mismatched correlation metadata",
             retryable=False,
         )
-
-
-def _remote_trace_config(headers: dict[str, str]) -> dict[str, object]:
-    """Make propagated LangSmith headers available inside the RemoteGraph node."""
-    context = {
-        key: value
-        for key, value in headers.items()
-        if key.lower() in {"langsmith-trace", "baggage"}
-    }
-    return {"configurable": context} if context else {}

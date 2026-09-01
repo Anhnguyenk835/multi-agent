@@ -1,7 +1,5 @@
 import asyncio
-from contextlib import asynccontextmanager
 
-import langsmith as ls
 from distributed_agent_contracts import (
     ContractStatus,
     Finding,
@@ -15,13 +13,11 @@ from langchain.agents import create_agent
 from langchain.agents.middleware import ToolCallLimitMiddleware
 from langchain.agents.structured_output import ToolStrategy
 from langchain_core.messages import ToolMessage
-from langchain_core.runnables import RunnableConfig
 from langchain_openai import ChatOpenAI
 from langgraph.graph import END, START, StateGraph
 
 from researcher.errors import GroundingError, ToolCallLimitReachedError
 from researcher.fixtures import build_findings
-from researcher.langsmith_tracing import langchain_tracer
 from researcher.llm_schema import LLMFindingsResponse
 from researcher.prompts import SYSTEM_PROMPT
 from researcher.settings import AIMode, DemoSettings, FailureMode, ResearcherAISettings
@@ -37,9 +33,7 @@ def _build_chat_model(settings: ResearcherAISettings) -> ChatOpenAI:
 
 
 def _build_fixture_graph(runtime_settings: DemoSettings):
-    async def collect_findings(
-        state: ResearcherRemoteState, config: RunnableConfig
-    ) -> dict[str, object]:
+    async def collect_findings(state: ResearcherRemoteState) -> dict[str, object]:
         request = ResearcherInput.model_validate(state)
         if runtime_settings.failure_mode is FailureMode.TIMEOUT:
             await asyncio.sleep(runtime_settings.delay_seconds)
@@ -75,21 +69,10 @@ def _extract_request(state: dict[str, object]) -> ResearcherInput:
     )
 
 
-def _langsmith_headers(config: RunnableConfig) -> dict[str, str]:
-    configurable = config.get("configurable", {})
-    return {
-        key: value
-        for key, value in configurable.items()
-        if key in {"langsmith-trace", "baggage"} and isinstance(value, str)
-    }
-
-
 def _build_live_graph(runtime_settings: DemoSettings):
     ai_settings = runtime_settings.ai
 
-    async def run_react_agent(
-        state: ResearcherRemoteState, config: RunnableConfig
-    ) -> dict[str, object]:
+    async def run_react_agent(state: ResearcherRemoteState) -> dict[str, object]:
         request = _extract_request(state)
         search_tool = build_search_tool(runtime_settings.exa)
         agent = create_agent(
@@ -101,10 +84,8 @@ def _build_live_graph(runtime_settings: DemoSettings):
                 ToolCallLimitMiddleware(tool_name="search", run_limit=3, exit_behavior="end"),
             ],
         )
-        callbacks = [tracer] if (tracer := langchain_tracer()) is not None else []
         final_state = await agent.ainvoke(
             {"messages": [{"role": "user", "content": request.query}]},
-            config={"callbacks": callbacks},
         )
 
         sources_by_tag = {}
@@ -173,26 +154,3 @@ def build_graph(settings: DemoSettings | None = None):
     if runtime_settings.ai.ai_mode is AIMode.LIVE:
         return _build_live_graph(runtime_settings)
     return _build_fixture_graph(runtime_settings)
-
-
-@asynccontextmanager
-async def graph(config: RunnableConfig):
-    """Accept LangGraph Server's distributed LangSmith context for the graph run.
-
-    The server creates the top-level ``researcher`` run before it enters graph
-    nodes. Setting the parent here, rather than in an individual node, makes
-    that whole run a child of ``call_researcher`` in the Orchestrator trace.
-    """
-    configurable = config.get("configurable", {})
-    parent_trace = configurable.get("langsmith-trace")
-    project_name = configurable.get("langsmith-project")
-    metadata = configurable.get("langsmith-metadata")
-    tags = configurable.get("langsmith-tags")
-
-    with ls.tracing_context(
-        parent=parent_trace if isinstance(parent_trace, str) else None,
-        project_name=project_name if isinstance(project_name, str) else None,
-        metadata=metadata if isinstance(metadata, dict) else None,
-        tags=tags if isinstance(tags, list) and all(isinstance(tag, str) for tag in tags) else None,
-    ):
-        yield build_graph()
