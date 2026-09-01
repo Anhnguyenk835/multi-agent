@@ -67,7 +67,7 @@ class _FakeToolCallingModel(BaseChatModel):
 
 def _live_demo_settings() -> DemoSettings:
     return DemoSettings(
-        ai=ResearcherAISettings(ai_mode=AIMode.LIVE, openai_api_key="test-key"),
+        ai=ResearcherAISettings(ai_mode=AIMode.LIVE, gateway_api_key="test-key"),
         exa=ResearcherExaSettings(exa_api_key="test-exa-key"),
     )
 

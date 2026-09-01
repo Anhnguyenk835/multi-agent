@@ -79,7 +79,7 @@ def test_analyze_live_mode_uses_only_generated_content(monkeypatch) -> None:
     monkeypatch.setattr(llm_client, "generate_structured", fake_generate_structured)
 
     settings = DemoSettings(
-        ai=AnalystAISettings(ai_mode=AIMode.LIVE, openai_api_key="test-key")
+        ai=AnalystAISettings(ai_mode=AIMode.LIVE, gateway_api_key="test-key")
     )
     client = TestClient(create_app(settings))
     response = client.post("/analyze", json=request_payload())

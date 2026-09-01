@@ -60,6 +60,12 @@ variable "allow_public_access" {
   description = "Demo simplification: no per-caller IAM, every service is reachable directly."
 }
 
+variable "ingress" {
+  type        = string
+  default     = "INGRESS_TRAFFIC_ALL"
+  description = "Cloud Run ingress policy, for example INGRESS_TRAFFIC_INTERNAL_ONLY."
+}
+
 variable "startup_probe_path" {
   type        = string
   default     = null

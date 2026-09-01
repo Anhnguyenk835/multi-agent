@@ -1,6 +1,39 @@
 name: distributed-agents-demo
 
 services:
+  llm-gateway-postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: litellm
+      POSTGRES_PASSWORD: litellm
+      POSTGRES_USER: litellm
+    volumes:
+      - litellm-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U litellm -d litellm"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  llm-gateway:
+    build:
+      context: infra/llm-gateway
+    env_file:
+      - infra/llm-gateway/.env
+    environment:
+      DATABASE_URL: postgresql://litellm:litellm@llm-gateway-postgres:5432/litellm
+    ports:
+      - "127.0.0.1:4000:4000"
+    depends_on:
+      llm-gateway-postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:4000/health/liveliness')"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+      start_period: 30s
+
   orchestrator:
     build:
       context: .
@@ -71,6 +104,10 @@ services:
     environment:
       DEMO_FAILURE_DELAY_MS: ${RESEARCHER_FAILURE_DELAY_MS:-250}
       DEMO_FAILURE_MODE: ${RESEARCHER_FAILURE_MODE:-none}
+      LLM_GATEWAY_BASE_URL: http://llm-gateway:4000/v1
+    depends_on:
+      llm-gateway:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/ok')"]
       interval: 10s
@@ -89,6 +126,10 @@ services:
     environment:
       DEMO_FAILURE_DELAY_MS: ${MARKET_FAILURE_DELAY_MS:-250}
       DEMO_FAILURE_MODE: ${MARKET_FAILURE_MODE:-none}
+      LLM_GATEWAY_BASE_URL: http://llm-gateway:4000/v1
+    depends_on:
+      llm-gateway:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "uv", "run", "--frozen", "--package", "market-agent", "python", "-c", "import grpc; from grpc_health.v1 import health_pb2, health_pb2_grpc; channel = grpc.insecure_channel('localhost:50051'); response = health_pb2_grpc.HealthStub(channel).Check(health_pb2.HealthCheckRequest(), timeout=2); assert response.status == health_pb2.HealthCheckResponse.SERVING"]
       interval: 10s
@@ -106,6 +147,10 @@ services:
     environment:
       DEMO_FAILURE_DELAY_MS: ${ANALYST_FAILURE_DELAY_MS:-250}
       DEMO_FAILURE_MODE: ${ANALYST_FAILURE_MODE:-none}
+      LLM_GATEWAY_BASE_URL: http://llm-gateway:4000/v1
+    depends_on:
+      llm-gateway:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8002/ready')"]
       interval: 10s
@@ -123,6 +168,10 @@ services:
     environment:
       DEMO_FAILURE_DELAY_MS: ${WRITER_FAILURE_DELAY_MS:-250}
       DEMO_FAILURE_MODE: ${WRITER_FAILURE_MODE:-none}
+      LLM_GATEWAY_BASE_URL: http://llm-gateway:4000/v1
+    depends_on:
+      llm-gateway:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8003/ready')"]
       interval: 10s
@@ -131,3 +180,4 @@ services:
 
 volumes:
   orchestrator-postgres-data:
+  litellm-postgres-data:

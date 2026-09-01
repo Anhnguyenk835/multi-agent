@@ -13,3 +13,8 @@ variable "image" {
   type        = string
   description = "Full image reference for the researcher container, e.g. REGION-docker.pkg.dev/PROJECT/researcher/researcher:TAG."
 }
+
+variable "llm_gateway_base_url" {
+  type        = string
+  description = "Private LiteLLM Proxy OpenAI-compatible base URL, including /v1."
+}

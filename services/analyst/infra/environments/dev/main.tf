@@ -31,7 +31,7 @@ module "secrets" {
   source                         = "../../modules/secrets"
   project_id                     = var.project_id
   name_prefix                    = "analyst-"
-  secret_names                   = ["OPENAI_API_KEY"]
+  secret_names                   = ["LLM_GATEWAY_API_KEY"]
   accessor_service_account_email = google_service_account.runtime.email
 }
 
@@ -46,13 +46,15 @@ module "cloud_run" {
   startup_probe_path    = "/ready"
 
   env_vars = {
-    AI_MODE                = "live"
-    OPENAI_MODEL           = "gpt-4o-mini"
-    LLM_TIMEOUT_SECONDS    = "30"
-    DEMO_FAILURE_MODE      = "none"
+    AI_MODE               = "live"
+    LLM_GATEWAY_BASE_URL  = var.llm_gateway_base_url
+    LLM_MODEL_ROUTE       = "analysis-standard"
+    LLM_TIMEOUT_SECONDS   = "30"
+    LLM_MAX_OUTPUT_TOKENS = "2000"
+    DEMO_FAILURE_MODE     = "none"
   }
 
   secret_env_vars = {
-    OPENAI_API_KEY    = module.secrets.secret_ids["OPENAI_API_KEY"]
+    LLM_GATEWAY_API_KEY = module.secrets.secret_ids["LLM_GATEWAY_API_KEY"]
   }
 }

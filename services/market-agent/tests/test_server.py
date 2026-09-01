@@ -61,7 +61,7 @@ def _live_settings() -> DemoSettings:
     from market_agent.settings import MarketExaSettings
 
     return DemoSettings(
-        ai=MarketAISettings(ai_mode=AIMode.LIVE, openai_api_key="test-key"),
+        ai=MarketAISettings(ai_mode=AIMode.LIVE, gateway_api_key="test-key"),
         exa=MarketExaSettings(exa_api_key="test-exa-key"),
     )
 

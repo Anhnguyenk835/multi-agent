@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-import litellm
+import openai
 from google.adk.events import Event
 from google.adk.runners import Runner
 from google.adk.sessions import InMemorySessionService
@@ -15,9 +15,9 @@ from market_agent.errors import (
 from market_agent.settings import AIMode, DemoSettings
 
 _NO_RETRY = (
-    litellm.exceptions.AuthenticationError,
-    litellm.exceptions.PermissionDeniedError,
-    litellm.exceptions.BadRequestError,
+    openai.AuthenticationError,
+    openai.PermissionDeniedError,
+    openai.BadRequestError,
 )
 
 
@@ -55,19 +55,23 @@ class MarketAgentRunner:
             events = await _run_agent(
                 DeterministicMarketAgent(name="market_researcher"), query, request_id
             )
-            output = next((event.output for event in events if isinstance(event.output, dict)), None)
+            output = next(
+                (event.output for event in events if isinstance(event.output, dict)), None
+            )
         else:
             agent = build_live_agent(
                 "market_researcher",
-                f"openai/{settings.ai.openai_model}",
+                settings.ai,
                 settings.exa,
             )
             try:
                 events = await _run_agent(agent, query, request_id)
             except _NO_RETRY as error:
-                raise ProviderConfigurationError("OpenAI rejected the market agent request") from error
+                raise ProviderConfigurationError(
+                    "LLM gateway rejected the market agent request"
+                ) from error
             except Exception as error:
-                raise ProviderUnavailableError("OpenAI is unavailable") from error
+                raise ProviderUnavailableError("LLM gateway is unavailable") from error
             output = extract_market_output(events)
 
         if output is None:

@@ -8,7 +8,7 @@ deterministic fixture and a real ReAct search agent behind the same
 
 ```mermaid
 flowchart TD
-    Q([Query]) --> M{LlmAgent<br/>LiteLlm openai/...}
+    Q([Query]) --> M{LlmAgent<br/>ADK OpenAILlm via LiteLLM}
     M -->|call search, ≤3x| S[search tool<br/>Exa, own tools.py]
     S -->|tagged results| M
     M -->|call submit_market_analysis| G[Ground tags → sources]
@@ -23,8 +23,8 @@ flowchart TD
   model text.
 - Final answer is a call to a synthetic `submit_market_analysis` tool, not
   `output_schema`, matching the tag-grounding pattern used by Researcher.
-- ADK has no native OpenAI client — `LiteLlm` (backed by `litellm`) is the
-  supported bridge for the configured OpenAI model.
+- ADK's `OpenAILlm` adapter uses an `AsyncOpenAI` client pointed at LiteLLM.
+  ADK owns the tool loop; LiteLLM owns provider selection and fallback.
 
 | File | Responsibility |
 | --- | --- |
@@ -36,8 +36,10 @@ flowchart TD
 ## Configuration
 
 `services/market-agent/.env` (own copy, not shared): `AI_MODE`,
-`OPENAI_API_KEY`/`OPENAI_MODEL`, `EXA_API_KEY`,
-`EXA_MAX_RESULTS`, `EXA_CONTENT_MAX_CHARACTERS`, `LLM_TIMEOUT_SECONDS`.
+`LLM_GATEWAY_BASE_URL`, `LLM_GATEWAY_API_KEY`, `LLM_MODEL_ROUTE`,
+`EXA_API_KEY`, `EXA_MAX_RESULTS`, `EXA_CONTENT_MAX_CHARACTERS`,
+`LLM_TIMEOUT_SECONDS`, `LLM_MAX_OUTPUT_TOKENS`. Provider credentials remain
+only in the LiteLLM gateway.
 
 ## Run
 

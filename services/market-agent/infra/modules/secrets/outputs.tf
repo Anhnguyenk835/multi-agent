@@ -1,5 +1,5 @@
 # Keyed by the logical name (without prefix) so call sites stay readable:
-# module.secrets.secret_ids["OPENAI_API_KEY"] -> "analyst-OPENAI_API_KEY".
+# module.secrets.secret_ids["LLM_GATEWAY_API_KEY"] -> "market-agent-LLM_GATEWAY_API_KEY".
 output "secret_ids" {
   value = { for name, secret in google_secret_manager_secret.this : name => secret.secret_id }
 }

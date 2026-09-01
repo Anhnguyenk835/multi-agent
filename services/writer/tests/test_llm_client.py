@@ -18,7 +18,7 @@ class _Answer(BaseModel):
 def _live_settings(**overrides: object) -> WriterAISettings:
     defaults: dict[str, object] = {
         "ai_mode": AIMode.LIVE,
-        "openai_api_key": "openai-test-key",
+        "gateway_api_key": "gateway-test-key",
         "llm_timeout_seconds": 1.0,
     }
     defaults.update(overrides)
@@ -157,11 +157,11 @@ async def test_empty_completion_raises_provider_unavailable_error() -> None:
 
 
 @pytest.mark.anyio
-async def test_missing_openai_api_key_raises_before_any_client_call() -> None:
+async def test_missing_gateway_api_key_raises_before_any_client_call() -> None:
     with pytest.raises(ProviderConfigurationError):
         await generate_structured(
             schema=_Answer,
             system_prompt="system",
             user_prompt="user",
-            settings=_live_settings(openai_api_key=None),
+            settings=_live_settings(gateway_api_key=None),
         )

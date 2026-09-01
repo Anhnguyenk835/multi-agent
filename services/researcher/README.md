@@ -11,7 +11,7 @@ fixture and a real ReAct search agent behind the same
 flowchart TD
     I[ResearcherInput<br/>query, request_id, trace_id] --> R[RemoteGraph / LangGraph Server]
     R --> G[run_react_agent]
-    G --> M{LangChain create_agent<br/>OpenAI}
+    G --> M{LangChain create_agent<br/>LiteLLM logical route}
     M -->|search, max 3 calls| S[Local Exa search tool<br/>tools.py]
     S -->|tagged results| M
     M -->|submit LLMFindingsResponse| V[Validate source tags]
@@ -37,7 +37,8 @@ flowchart TD
   the run. The service builds every `Source` itself, never trusting model text.
 - `ToolCallLimitMiddleware` caps search at 3 calls; the model submits via a
   synthetic `LLMFindingsResponse` tool call, not free text.
-- OpenAI via `langchain_openai.ChatOpenAI`.
+- The OpenAI-compatible `ChatOpenAI` client calls LiteLLM; provider selection
+  and fallback are owned by the gateway.
 - `request_id` and `trace_id` remain in the service contract for correlation.
 
 | File | Responsibility |
@@ -49,8 +50,9 @@ flowchart TD
 ## Configuration
 
 `services/researcher/.env` (own copy, not shared): `AI_MODE`,
-`OPENAI_API_KEY`/`OPENAI_MODEL`, `EXA_API_KEY`,
-`EXA_MAX_RESULTS`, `EXA_CONTENT_MAX_CHARACTERS`, `LLM_TIMEOUT_SECONDS`.
+`LLM_GATEWAY_BASE_URL`, `LLM_GATEWAY_API_KEY`, `LLM_MODEL_ROUTE`,
+`EXA_API_KEY`, `EXA_MAX_RESULTS`, `EXA_CONTENT_MAX_CHARACTERS`,
+`LLM_TIMEOUT_SECONDS`, `LLM_MAX_OUTPUT_TOKENS`.
 
 ## Run
 

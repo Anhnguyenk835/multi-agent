@@ -7,7 +7,7 @@ Agent's signals into a detailed markdown analysis.
 
 ```mermaid
 flowchart LR
-    IN([AnalysisRequest<br/>findings + signals]) --> G{generate_structured<br/>OpenAI}
+    IN([AnalysisRequest<br/>findings + signals]) --> G{generate_structured<br/>LiteLLM route}
     G --> OUT([AnalysisResponse<br/>content + citations])
 ```
 
@@ -28,8 +28,9 @@ flowchart LR
 
 ## Configuration
 
-`services/analyst/.env` (own copy): `AI_MODE`, `OPENAI_API_KEY`/`OPENAI_MODEL`,
-`LLM_TIMEOUT_SECONDS`. No `EXA_*`.
+`services/analyst/.env` (own copy): `AI_MODE`, `LLM_GATEWAY_BASE_URL`,
+`LLM_GATEWAY_API_KEY`, `LLM_MODEL_ROUTE`, `LLM_TIMEOUT_SECONDS`, and
+`LLM_MAX_OUTPUT_TOKENS`. No `EXA_*` or provider credential.
 
 ## Run
 

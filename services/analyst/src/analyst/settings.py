@@ -11,7 +11,8 @@ from analyst.errors import ProviderConfigurationError
 # Own .env per service, not a shared root file.
 load_dotenv(Path(__file__).resolve().parents[2] / ".env")
 
-_DEFAULT_OPENAI_MODEL = "gpt-4o-mini"
+_DEFAULT_MODEL_ROUTE = "analysis-standard"
+_DEFAULT_GATEWAY_BASE_URL = "http://llm-gateway:4000/v1"
 _MODEL_ID_TRANSLATION = str.maketrans(
     {
         "\u2010": "-",
@@ -39,23 +40,28 @@ class FailureMode(StrEnum):
 @dataclass(frozen=True, slots=True)
 class AnalystAISettings:
     ai_mode: AIMode = AIMode.FIXTURE
-    openai_api_key: str | None = None
-    openai_model: str = _DEFAULT_OPENAI_MODEL
+    gateway_api_key: str | None = None
+    gateway_base_url: str = _DEFAULT_GATEWAY_BASE_URL
+    model_route: str = _DEFAULT_MODEL_ROUTE
     llm_timeout_seconds: float = 30.0
+    llm_max_output_tokens: int = 2_000
 
     @classmethod
     def from_environment(cls) -> "AnalystAISettings":
         ai_mode = AIMode(os.getenv("AI_MODE", AIMode.FIXTURE.value))
-        openai_api_key = os.getenv("OPENAI_API_KEY") or None
+        gateway_api_key = os.getenv("LLM_GATEWAY_API_KEY") or None
+        gateway_base_url = os.getenv("LLM_GATEWAY_BASE_URL") or _DEFAULT_GATEWAY_BASE_URL
 
-        if ai_mode is AIMode.LIVE and not openai_api_key:
-            raise ProviderConfigurationError("AI_MODE=live requires OPENAI_API_KEY to be set")
+        if ai_mode is AIMode.LIVE and not gateway_api_key:
+            raise ProviderConfigurationError("AI_MODE=live requires LLM_GATEWAY_API_KEY to be set")
 
         return cls(
             ai_mode=ai_mode,
-            openai_api_key=openai_api_key,
-            openai_model=_model_id_from_environment("OPENAI_MODEL", _DEFAULT_OPENAI_MODEL),
+            gateway_api_key=gateway_api_key,
+            gateway_base_url=gateway_base_url.rstrip("/"),
+            model_route=_model_id_from_environment("LLM_MODEL_ROUTE", _DEFAULT_MODEL_ROUTE),
             llm_timeout_seconds=max(1.0, float(os.getenv("LLM_TIMEOUT_SECONDS", "30"))),
+            llm_max_output_tokens=max(1, int(os.getenv("LLM_MAX_OUTPUT_TOKENS", "2000"))),
         )
 
 

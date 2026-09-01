@@ -2,7 +2,7 @@ resource "google_cloud_run_v2_service" "this" {
   name     = var.service_name
   project  = var.project_id
   location = var.region
-  ingress  = "INGRESS_TRAFFIC_ALL"
+  ingress  = var.ingress
 
   # Provider v6 defaults this to true, which makes `terraform destroy` fail.
   # A demo needs to tear down cleanly.

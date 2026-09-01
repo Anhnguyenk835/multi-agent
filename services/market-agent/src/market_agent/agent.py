@@ -3,13 +3,14 @@ from datetime import datetime
 
 from google.adk.agents import BaseAgent, InvocationContext, LlmAgent
 from google.adk.events import Event
-from google.adk.models.lite_llm import LiteLlm
+from google.adk.labs.openai import OpenAILlm
 from google.adk.tools import FunctionTool
+from openai import AsyncOpenAI
 
 from market_agent.fixtures import market_fixture
 from market_agent.llm_schema import LLMMarketResponse
 from market_agent.prompts import SYSTEM_PROMPT
-from market_agent.settings import MarketExaSettings
+from market_agent.settings import MarketAISettings, MarketExaSettings
 from market_agent.tools import ExaSourceResult, build_search_function, parse_function_response
 
 SUBMIT_TOOL_NAME = "submit_market_analysis"
@@ -53,21 +54,36 @@ def submit_market_analysis(response: LLMMarketResponse) -> dict[str, str]:
     return {"status": "received"}
 
 
-def build_live_agent(name: str, model_string: str, exa_settings: MarketExaSettings) -> LlmAgent:
-    """Build a native ADK tool-calling agent for `model_string`.
+def build_live_agent(
+    name: str,
+    ai_settings: MarketAISettings,
+    exa_settings: MarketExaSettings,
+) -> LlmAgent:
+    """Build an ADK tool-calling agent backed by the LiteLLM gateway.
 
-    `model_string` uses litellm's provider-prefixed form, e.g.
-    `"openai/gpt-4o-mini"` — ADK has no native OpenAI client, so `LiteLlm`
-    is the only supported bridge to it.
+    ADK retains its native tool loop. Its OpenAI-compatible model adapter is
+    given an SDK client pointed at LiteLLM, so the logical route stays in the
+    agent configuration while provider choice and fallback remain at the
+    gateway.
 
     The final structured answer is delivered as a call to the synthetic
     `submit_market_analysis` tool rather than via `LlmAgent.output_schema`,
     matching the tag-grounding pattern used by Researcher's search tool.
     """
     search = build_search_function(exa_settings)
+    gateway_client = AsyncOpenAI(
+        api_key=ai_settings.gateway_api_key,
+        base_url=ai_settings.gateway_base_url,
+        timeout=ai_settings.llm_timeout_seconds,
+        max_retries=0,
+    )
     return LlmAgent(
         name=name,
-        model=LiteLlm(model=model_string),
+        model=OpenAILlm(
+            model=ai_settings.model_route,
+            max_tokens=ai_settings.llm_max_output_tokens,
+            client=gateway_client,
+        ),
         instruction=SYSTEM_PROMPT,
         tools=[FunctionTool(search), FunctionTool(submit_market_analysis)],
     )

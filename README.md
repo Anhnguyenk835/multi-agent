@@ -39,6 +39,11 @@ Start the service containers with:
 docker compose up --build
 ```
 
+Before starting the stack, copy `infra/llm-gateway/.env.example` to
+`infra/llm-gateway/.env` and set the gateway-only provider keys and master
+key. Agent service `.env` files contain only their own LiteLLM virtual key and
+logical route; provider credentials must not be copied into them.
+
 Every service has its own `services/<service>/Dockerfile`, so service-specific
 runtime dependencies and startup commands remain isolated. The Orchestrator is
 available at `http://localhost:8000/health`. The deterministic Phase 2 services
@@ -50,6 +55,7 @@ are exposed as follows:
 | Market Agent | gRPC `distributed_agents.market.v1.MarketAgent` on `localhost:50051` | gRPC Health Checking |
 | Analyst | `POST http://localhost:8002/analyze` | `GET /ready` |
 | Writer | `POST http://localhost:8003/write` | `GET /ready` |
+| LiteLLM gateway | OpenAI-compatible API on `http://localhost:4000/v1` | `GET /health/liveliness` |
 | PostgreSQL | Checkpoints on `localhost:5434` | `pg_isready` |
 
 The Orchestrator exposes `POST http://localhost:8000/workflows` and stores each

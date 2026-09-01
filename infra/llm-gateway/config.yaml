@@ -1,0 +1,71 @@
+# Physical provider models are deliberately private to the gateway. Agent
+# services call only the logical model_name values in the first column below.
+model_list:
+  - model_name: research-fast
+    litellm_params:
+      model: gemini/gemini-2.5-flash
+      api_key: os.environ/GEMINI_API_KEY
+
+  - model_name: research-fast-openai-fallback
+    litellm_params:
+      model: openai/gpt-4o-mini
+      api_key: os.environ/OPENAI_API_KEY
+
+  - model_name: market-standard
+    litellm_params:
+      model: openai/gpt-4o-mini
+      api_key: os.environ/OPENAI_API_KEY
+
+  - model_name: market-standard-claude-fallback
+    litellm_params:
+      model: anthropic/claude-haiku-4-5
+      api_key: os.environ/ANTHROPIC_API_KEY
+
+  - model_name: analysis-standard
+    litellm_params:
+      model: anthropic/claude-haiku-4-5
+      api_key: os.environ/ANTHROPIC_API_KEY
+
+  - model_name: analysis-standard-openai-fallback
+    litellm_params:
+      model: openai/gpt-4o-mini
+      api_key: os.environ/OPENAI_API_KEY
+
+  - model_name: brief-streaming
+    litellm_params:
+      model: openai/gpt-4o-mini
+      api_key: os.environ/OPENAI_API_KEY
+
+  - model_name: brief-streaming-gemini-fallback
+    litellm_params:
+      model: gemini/gemini-2.5-flash
+      api_key: os.environ/GEMINI_API_KEY
+
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY
+  database_url: os.environ/DATABASE_URL
+  database_connection_pool_limit: 10
+  database_connection_timeout: 30
+  store_model_in_db: false
+
+# A route receives at most one retry before one approved fallback route. SDK
+# retries are disabled in every agent so this is the only retry policy.
+router_settings:
+  routing_strategy: simple-shuffle
+  timeout: 10
+  num_retries: 1
+  max_fallbacks: 1
+  retry_after: 1
+  allowed_fails: 3
+  cooldown_time: 30
+  fallbacks:
+    - research-fast: [research-fast-openai-fallback]
+    - market-standard: [market-standard-claude-fallback]
+    - analysis-standard: [analysis-standard-openai-fallback]
+    - brief-streaming: [brief-streaming-gemini-fallback]
+
+litellm_settings:
+  telemetry: false
+  # Schema and tool parameters must be rejected when a selected provider does
+  # not support them; silently dropping them would violate service contracts.
+  drop_params: false

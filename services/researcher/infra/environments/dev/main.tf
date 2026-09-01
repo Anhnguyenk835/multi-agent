@@ -31,7 +31,7 @@ module "secrets" {
   source                         = "../../modules/secrets"
   project_id                     = var.project_id
   name_prefix                    = "researcher-"
-  secret_names                   = ["OPENAI_API_KEY", "EXA_API_KEY"]
+  secret_names                   = ["LLM_GATEWAY_API_KEY", "EXA_API_KEY"]
   accessor_service_account_email = google_service_account.runtime.email
 }
 
@@ -49,15 +49,17 @@ module "cloud_run" {
 
   env_vars = {
     AI_MODE                    = "live"
-    OPENAI_MODEL               = "gpt-4o-mini"
+    LLM_GATEWAY_BASE_URL       = var.llm_gateway_base_url
+    LLM_MODEL_ROUTE            = "research-fast"
     LLM_TIMEOUT_SECONDS        = "60"
+    LLM_MAX_OUTPUT_TOKENS      = "2000"
     EXA_MAX_RESULTS            = "8"
     EXA_CONTENT_MAX_CHARACTERS = "4000"
     DEMO_FAILURE_MODE          = "none"
   }
 
   secret_env_vars = {
-    OPENAI_API_KEY    = module.secrets.secret_ids["OPENAI_API_KEY"]
-    EXA_API_KEY       = module.secrets.secret_ids["EXA_API_KEY"]
+    LLM_GATEWAY_API_KEY = module.secrets.secret_ids["LLM_GATEWAY_API_KEY"]
+    EXA_API_KEY         = module.secrets.secret_ids["EXA_API_KEY"]
   }
 }

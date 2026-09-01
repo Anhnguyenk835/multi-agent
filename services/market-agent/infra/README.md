@@ -28,8 +28,9 @@ terraform apply -target=module.artifact_registry -target=module.secrets
 
 # Seed secrets. Secret Manager IDs are unique per project, so each service
 # prefixes its own (market-agent-*) to avoid colliding with the other services.
-# Values can come straight from this service's local .env:
-for KEY in OPENAI_API_KEY EXA_API_KEY; do
+# The virtual key is provisioned by infra/llm-gateway/scripts; Exa remains a
+# service-local tool credential.
+for KEY in LLM_GATEWAY_API_KEY EXA_API_KEY; do
   grep "^$KEY=" ../../../.env | cut -d= -f2- | tr -d '\n' \
     | gcloud secrets versions add "market-agent-$KEY" --data-file=-
 done

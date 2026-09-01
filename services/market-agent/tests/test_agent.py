@@ -12,16 +12,16 @@ from market_agent.llm_schema import LLMMarketResponse, LLMSignal
 from market_agent.tools import ExaSourceResult
 
 
-def test_model_ids_are_canonicalized_from_environment(monkeypatch) -> None:
+def test_model_route_is_canonicalized_from_environment(monkeypatch) -> None:
     from market_agent.settings import AIMode, MarketAISettings
 
     monkeypatch.setenv("AI_MODE", AIMode.LIVE.value)
-    monkeypatch.setenv("OPENAI_API_KEY", "test-openai-key")
-    monkeypatch.setenv("OPENAI_MODEL", "GPT\u20114o\u2011mini")
+    monkeypatch.setenv("LLM_GATEWAY_API_KEY", "test-gateway-key")
+    monkeypatch.setenv("LLM_MODEL_ROUTE", "MARKET\u2011STANDARD")
 
     settings = MarketAISettings.from_environment()
 
-    assert settings.openai_model == "gpt-4o-mini"
+    assert settings.model_route == "market-standard"
 
 
 def test_submit_tool_registered_name_matches_submit_tool_name_constant() -> None:

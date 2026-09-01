@@ -26,9 +26,14 @@ from researcher.tools import build_search_tool, parse_tool_message
 
 def _build_chat_model(settings: ResearcherAISettings) -> ChatOpenAI:
     return ChatOpenAI(
-        model_name=settings.openai_model,
-        openai_api_key=settings.openai_api_key,
-        request_timeout=settings.llm_timeout_seconds,
+        model=settings.model_route,
+        api_key=settings.gateway_api_key,
+        base_url=settings.gateway_base_url,
+        timeout=settings.llm_timeout_seconds,
+        max_completion_tokens=settings.llm_max_output_tokens,
+        # LiteLLM owns retry and fallback policy. Retrying here would multiply
+        # provider attempts and bypass the route's bounded failure budget.
+        max_retries=0,
     )
 
 
