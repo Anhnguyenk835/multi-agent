@@ -28,9 +28,26 @@ variable "env_vars" {
   default = {}
 }
 
+variable "container_args" {
+  type        = list(string)
+  description = "Arguments passed to the image entrypoint."
+  default     = []
+}
+
 variable "secret_env_vars" {
   type        = map(string)
   description = "Env var name -> Secret Manager secret ID. Mounted as the secret's latest version."
+  default     = {}
+}
+
+variable "secret_volume_mounts" {
+  type = map(object({
+    secret_id  = string
+    mount_path = string
+    file_name  = string
+    version    = optional(string, "latest")
+  }))
+  description = "Named Secret Manager file mounts for the container."
   default     = {}
 }
 

@@ -11,5 +11,6 @@ variable "region" {
 
 variable "image" {
   type        = string
-  description = "Full image reference for the pinned LiteLLM gateway image."
+  description = "Pinned official LiteLLM database image run directly by Cloud Run."
+  default     = "ghcr.io/berriai/litellm-database:v1.98.0"
 }

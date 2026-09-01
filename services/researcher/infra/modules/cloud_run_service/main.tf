@@ -26,8 +26,23 @@ resource "google_cloud_run_v2_service" "this" {
       }
     }
 
+    dynamic "volumes" {
+      for_each = var.secret_volume_mounts
+      content {
+        name = volumes.key
+        secret {
+          secret = volumes.value.secret_id
+          items {
+            version = volumes.value.version
+            path    = volumes.value.file_name
+          }
+        }
+      }
+    }
+
     containers {
       image = var.image
+      args  = var.container_args
 
       ports {
         # gRPC needs end-to-end HTTP/2; without the "h2c" name Cloud Run
@@ -69,6 +84,14 @@ resource "google_cloud_run_v2_service" "this" {
         content {
           name       = "cloudsql"
           mount_path = "/cloudsql"
+        }
+      }
+
+      dynamic "volume_mounts" {
+        for_each = var.secret_volume_mounts
+        content {
+          name       = volume_mounts.key
+          mount_path = volume_mounts.value.mount_path
         }
       }
 

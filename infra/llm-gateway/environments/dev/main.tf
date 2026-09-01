@@ -20,13 +20,6 @@ resource "google_service_account" "runtime" {
   display_name = "LiteLLM gateway Cloud Run runtime identity"
 }
 
-module "artifact_registry" {
-  source        = "../../../../services/researcher/infra/modules/artifact_registry"
-  project_id    = var.project_id
-  region        = var.region
-  repository_id = "llm-gateway"
-}
-
 module "cloud_sql" {
   source        = "../../../../services/orchestrator/infra/modules/cloud_sql"
   project_id    = var.project_id
@@ -46,7 +39,7 @@ module "secrets" {
   source                         = "../../../../services/researcher/infra/modules/secrets"
   project_id                     = var.project_id
   name_prefix                    = "llm-gateway-"
-  secret_names                   = ["OPENAI_API_KEY", "GEMINI_API_KEY", "ANTHROPIC_API_KEY", "LITELLM_MASTER_KEY"]
+  secret_names                   = ["OPENAI_API_KEY", "GEMINI_API_KEY", "ANTHROPIC_API_KEY", "LITELLM_MASTER_KEY", "LITELLM_SALT_KEY"]
   accessor_service_account_email = google_service_account.runtime.email
 }
 
@@ -74,6 +67,29 @@ resource "google_secret_manager_secret_iam_member" "database_url_accessor" {
   member    = "serviceAccount:${google_service_account.runtime.email}"
 }
 
+# The configuration contains model aliases and policy, but no provider
+# credentials. A secret volume lets Cloud Run use the official image directly.
+resource "google_secret_manager_secret" "config" {
+  project   = var.project_id
+  secret_id = "llm-gateway-CONFIG"
+
+  replication {
+    auto {}
+  }
+}
+
+resource "google_secret_manager_secret_version" "config" {
+  secret      = google_secret_manager_secret.config.id
+  secret_data = file("${path.module}/../../config.yaml")
+}
+
+resource "google_secret_manager_secret_iam_member" "config_accessor" {
+  project   = var.project_id
+  secret_id = google_secret_manager_secret.config.secret_id
+  role      = "roles/secretmanager.secretAccessor"
+  member    = "serviceAccount:${google_service_account.runtime.email}"
+}
+
 module "cloud_run" {
   source                            = "../../../../services/researcher/infra/modules/cloud_run_service"
   project_id                        = var.project_id
@@ -95,11 +111,33 @@ module "cloud_run" {
     PORT = "4000"
   }
 
+  container_args = [
+    "--config",
+    "/etc/litellm/config.yaml",
+    "--host",
+    "0.0.0.0",
+    "--port",
+    "4000",
+    "--telemetry",
+    "False",
+    "--use_v2_migration_resolver",
+    "--enforce_prisma_migration_check",
+  ]
+
+  secret_volume_mounts = {
+    litellm_config = {
+      secret_id  = google_secret_manager_secret.config.secret_id
+      mount_path = "/etc/litellm"
+      file_name  = "config.yaml"
+    }
+  }
+
   secret_env_vars = {
     OPENAI_API_KEY     = module.secrets.secret_ids["OPENAI_API_KEY"]
     GEMINI_API_KEY     = module.secrets.secret_ids["GEMINI_API_KEY"]
     ANTHROPIC_API_KEY  = module.secrets.secret_ids["ANTHROPIC_API_KEY"]
     LITELLM_MASTER_KEY = module.secrets.secret_ids["LITELLM_MASTER_KEY"]
+    LITELLM_SALT_KEY   = module.secrets.secret_ids["LITELLM_SALT_KEY"]
     DATABASE_URL       = google_secret_manager_secret.database_url.secret_id
   }
 }
