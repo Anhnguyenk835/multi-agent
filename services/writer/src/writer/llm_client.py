@@ -1,5 +1,4 @@
 import json
-import logging
 from collections.abc import Callable
 from dataclasses import dataclass
 from functools import lru_cache
@@ -10,8 +9,12 @@ from pydantic import BaseModel, ValidationError
 
 from writer.errors import InvalidOutputError, ProviderConfigurationError, ProviderUnavailableError
 from writer.settings import WriterAISettings
-
-logger = logging.getLogger("writer.llm_client")
+from writer.telemetry import (
+    generation_span,
+    operation_span,
+    record_error,
+    set_generation_response,
+)
 
 _NO_RETRY = (openai.AuthenticationError, openai.PermissionDeniedError, openai.BadRequestError)
 
@@ -29,21 +32,6 @@ def _default_gateway_client(settings: WriterAISettings) -> openai.AsyncOpenAI:
         api_key=settings.gateway_api_key,
         base_url=settings.gateway_base_url,
         max_retries=0,
-    )
-
-
-def _log_telemetry(
-    model: str, latency_seconds: float, outcome: str, error_type: str | None
-) -> None:
-    logger.info(
-        "writer_llm_call",
-        extra={
-            "provider": "litellm-gateway",
-            "route": model,
-            "latency_ms": round(latency_seconds * 1000, 1),
-            "outcome": outcome,
-            "error_type": error_type,
-        },
     )
 
 
@@ -66,13 +54,18 @@ def _json_schema_response_format(schema: type[BaseModel]) -> dict[str, object]:
 
 
 def _parse[T: BaseModel](schema: type[T], content: str, model: str) -> T:
-    try:
-        data = json.loads(content)
-        return schema.model_validate(data)
-    except (json.JSONDecodeError, ValidationError) as exc:
-        raise InvalidOutputError(
-            f"gateway route {model!r} returned output that failed schema validation: {exc}"
-        ) from exc
+    with operation_span(
+        "output.schema_validate",
+        observation_type="guardrail",
+        attributes={"app.output_schema": schema.__name__},
+    ):
+        try:
+            data = json.loads(content)
+            return schema.model_validate(data)
+        except (json.JSONDecodeError, ValidationError) as exc:
+            raise InvalidOutputError(
+                f"gateway route {model!r} returned output that failed schema validation: {exc}"
+            ) from exc
 
 
 async def generate_structured[T: BaseModel](
@@ -90,28 +83,30 @@ async def generate_structured[T: BaseModel](
 
     client = (client_factory or _default_gateway_client)(settings)
     model = settings.model_route
-    started = monotonic()
-    try:
-        response = await client.chat.completions.create(
-            model=model,
-            messages=_messages(system_prompt, user_prompt),
-            response_format=_json_schema_response_format(schema),
-            max_tokens=settings.llm_max_output_tokens,
-            timeout=settings.llm_timeout_seconds,
-        )
-    except _NO_RETRY as exc:
-        _log_telemetry(model, monotonic() - started, "rejected", type(exc).__name__)
-        raise ProviderConfigurationError(f"LLM gateway rejected the request: {exc}") from exc
-    except Exception as exc:
-        _log_telemetry(model, monotonic() - started, "unavailable", type(exc).__name__)
-        raise ProviderUnavailableError(f"LLM gateway is unavailable: {exc}") from exc
+    with generation_span(model, schema.__name__) as span:
+        try:
+            response = await client.chat.completions.create(
+                model=model,
+                messages=_messages(system_prompt, user_prompt),
+                response_format=_json_schema_response_format(schema),
+                max_tokens=settings.llm_max_output_tokens,
+                timeout=settings.llm_timeout_seconds,
+            )
+        except _NO_RETRY as exc:
+            record_error(span, exc, "rejected")
+            raise ProviderConfigurationError(f"LLM gateway rejected the request: {exc}") from exc
+        except Exception as exc:
+            record_error(span, exc, "unavailable")
+            raise ProviderUnavailableError(f"LLM gateway is unavailable: {exc}") from exc
 
-    content = response.choices[0].message.content
-    if not content:
-        _log_telemetry(model, monotonic() - started, "unavailable", "EmptyCompletion")
-        raise ProviderUnavailableError("LLM gateway returned an empty completion")
+        content = response.choices[0].message.content
+        if not content:
+            error = ProviderUnavailableError("LLM gateway returned an empty completion")
+            record_error(span, error, "unavailable")
+            raise error
 
-    _log_telemetry(model, monotonic() - started, "success", None)
+        set_generation_response(span, response)
+        span.set_attribute("app.outcome", "success")
     return _parse(schema, content, model)
 
 
@@ -137,31 +132,43 @@ async def generate_structured_stream[T: BaseModel](
     model = settings.model_route
     started = monotonic()
     parts: list[str] = []
-    try:
-        stream = await client.chat.completions.create(
-            model=model,
-            messages=_messages(system_prompt, user_prompt),
-            response_format=_json_schema_response_format(schema),
-            stream=True,
-            max_tokens=settings.llm_max_output_tokens,
-            timeout=settings.llm_timeout_seconds,
-        )
-        async for chunk in stream:
-            content = chunk.choices[0].delta.content if chunk.choices else None
-            if content:
-                parts.append(content)
-                yield StructuredStreamChunk[T](kind="raw_delta", text=content)
-    except _NO_RETRY as exc:
-        _log_telemetry(model, monotonic() - started, "rejected", type(exc).__name__)
-        raise ProviderConfigurationError(f"LLM gateway rejected the request: {exc}") from exc
-    except Exception as exc:
-        _log_telemetry(model, monotonic() - started, "unavailable", type(exc).__name__)
-        raise ProviderUnavailableError(f"LLM gateway is unavailable: {exc}") from exc
+    with generation_span(
+        model,
+        schema_name=schema.__name__,
+        stream=True,
+    ) as span:
+        try:
+            stream = await client.chat.completions.create(
+                model=model,
+                messages=_messages(system_prompt, user_prompt),
+                response_format=_json_schema_response_format(schema),
+                stream=True,
+                max_tokens=settings.llm_max_output_tokens,
+                timeout=settings.llm_timeout_seconds,
+            )
+            async for chunk in stream:
+                content = chunk.choices[0].delta.content if chunk.choices else None
+                if content:
+                    if not parts:
+                        span.set_attribute(
+                            "gen_ai.response.time_to_first_chunk",
+                            monotonic() - started,
+                        )
+                    parts.append(content)
+                    yield StructuredStreamChunk[T](kind="raw_delta", text=content)
+        except _NO_RETRY as exc:
+            record_error(span, exc, "rejected")
+            raise ProviderConfigurationError(f"LLM gateway rejected the request: {exc}") from exc
+        except Exception as exc:
+            record_error(span, exc, "unavailable")
+            raise ProviderUnavailableError(f"LLM gateway is unavailable: {exc}") from exc
 
-    content = "".join(parts)
-    if not content:
-        _log_telemetry(model, monotonic() - started, "unavailable", "EmptyCompletion")
-        raise ProviderUnavailableError("LLM gateway returned an empty completion")
+        content = "".join(parts)
+        if not content:
+            error = ProviderUnavailableError("LLM gateway returned an empty completion")
+            record_error(span, error, "unavailable")
+            raise error
 
-    _log_telemetry(model, monotonic() - started, "success", None)
+        span.set_attribute("app.stream.chunk_count", len(parts))
+        span.set_attribute("app.outcome", "success")
     yield StructuredStreamChunk[T](kind="completed", result=_parse(schema, content, model))

@@ -12,6 +12,7 @@ from langgraph.config import get_stream_writer
 
 from researcher.errors import ProviderConfigurationError
 from researcher.settings import ResearcherExaSettings
+from researcher.telemetry import operation_span
 
 
 @dataclass(frozen=True, slots=True)
@@ -75,11 +76,20 @@ def build_search_tool(
             "research.search.started",
             {"query_preview": " ".join(query.split())[:160]},
         )
-        response = await client.search(
-            query,
-            num_results=settings.exa_max_results,
-            contents={"text": {"maxCharacters": settings.exa_content_max_characters}},
-        )
+        with operation_span(
+            "tool.search",
+            observation_type="tool",
+            attributes={
+                "app.agent": "researcher",
+                "app.tool.name": "search",
+                "app.tool.requested_results": settings.exa_max_results,
+            },
+        ):
+            response = await client.search(
+                query,
+                num_results=settings.exa_max_results,
+                contents={"text": {"maxCharacters": settings.exa_content_max_characters}},
+            )
 
         retrieved_at = datetime.now(UTC).isoformat()
         results: list[dict[str, object]] = []

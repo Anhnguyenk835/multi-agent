@@ -11,6 +11,7 @@ from distributed_agent_contracts import (
 
 from orchestrator.errors import WorkflowConflictError
 from orchestrator.state import WorkflowState
+from orchestrator.telemetry import set_workflow_result, workflow_span
 
 
 class WorkflowService:
@@ -18,46 +19,60 @@ class WorkflowService:
         self._graph = graph
 
     async def run(self, request: WorkflowRequest) -> WorkflowResponse:
-        config = _thread_config(request)
-        snapshot = await self._graph.aget_state(config)
-        existing = dict(snapshot.values) if snapshot.values else None
+        with workflow_span(request) as span:
+            config = _thread_config(request)
+            snapshot = await self._graph.aget_state(config)
+            existing = dict(snapshot.values) if snapshot.values else None
 
-        if existing:
-            if existing.get("query") != request.query:
-                raise WorkflowConflictError("request_id is already associated with a different query")
-            if not snapshot.next and existing.get("workflow_status"):
-                return _workflow_response(existing)
-            result = await self._graph.ainvoke(None, config)
-        else:
-            result = await self._graph.ainvoke(request.model_dump(mode="json"), config)
+            if existing:
+                if existing.get("query") != request.query:
+                    raise WorkflowConflictError(
+                        "request_id is already associated with a different query"
+                    )
+                if not snapshot.next and existing.get("workflow_status"):
+                    response = _workflow_response(existing)
+                    set_workflow_result(span, response)
+                    return response
+                result = await self._graph.ainvoke(None, config)
+            else:
+                result = await self._graph.ainvoke(request.model_dump(mode="json"), config)
 
-        return _workflow_response(result)
+            response = _workflow_response(result)
+            set_workflow_result(span, response)
+            return response
 
     async def stream(self, request: WorkflowRequest) -> AsyncIterator[dict[str, object]]:
         """Run the existing graph while forwarding its safe custom events."""
-        config = _thread_config(request)
-        snapshot = await self._graph.aget_state(config)
-        existing = dict(snapshot.values) if snapshot.values else None
+        with workflow_span(request) as span:
+            config = _thread_config(request)
+            snapshot = await self._graph.aget_state(config)
+            existing = dict(snapshot.values) if snapshot.values else None
 
-        if existing and existing.get("query") != request.query:
-            raise WorkflowConflictError("request_id is already associated with a different query")
+            if existing and existing.get("query") != request.query:
+                raise WorkflowConflictError(
+                    "request_id is already associated with a different query"
+                )
 
-        yield _event("workflow.started", request)
-        if existing and not snapshot.next and existing.get("workflow_status"):
-            yield _terminal_event(_workflow_response(existing))
-            return
+            yield _event("workflow.started", request)
+            if existing and not snapshot.next and existing.get("workflow_status"):
+                response = _workflow_response(existing)
+                set_workflow_result(span, response)
+                yield _terminal_event(response)
+                return
 
-        graph_input = None if existing else request.model_dump(mode="json")
-        async for mode, event in self._graph.astream(
-            graph_input,
-            config,
-            stream_mode=["custom", "updates"],
-        ):
-            if mode == "custom":
-                yield event
+            graph_input = None if existing else request.model_dump(mode="json")
+            async for mode, event in self._graph.astream(
+                graph_input,
+                config,
+                stream_mode=["custom", "updates"],
+            ):
+                if mode == "custom":
+                    yield event
 
-        final_snapshot = await self._graph.aget_state(config)
-        yield _terminal_event(_workflow_response(dict(final_snapshot.values)))
+            final_snapshot = await self._graph.aget_state(config)
+            response = _workflow_response(dict(final_snapshot.values))
+            set_workflow_result(span, response)
+            yield _terminal_event(response)
 
 
 def _thread_config(request: WorkflowRequest) -> dict[str, object]:

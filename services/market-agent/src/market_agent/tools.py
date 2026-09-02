@@ -8,6 +8,7 @@ from google.adk.tools import ToolContext
 
 from market_agent.errors import ProviderConfigurationError
 from market_agent.settings import MarketExaSettings
+from market_agent.telemetry import operation_span
 
 MAX_SEARCH_CALLS = 3
 _CALL_COUNT_STATE_KEY = "search_call_count"
@@ -73,11 +74,20 @@ def build_search_function(
                 ),
             }
 
-        response = await client.search(
-            query,
-            num_results=settings.exa_max_results,
-            contents={"text": {"maxCharacters": settings.exa_content_max_characters}},
-        )
+        with operation_span(
+            "tool.search",
+            observation_type="tool",
+            attributes={
+                "app.agent": "market",
+                "app.tool.name": "search",
+                "app.tool.requested_results": settings.exa_max_results,
+            },
+        ):
+            response = await client.search(
+                query,
+                num_results=settings.exa_max_results,
+                contents={"text": {"maxCharacters": settings.exa_content_max_characters}},
+            )
 
         retrieved_at = datetime.now(UTC).isoformat()
         results: list[dict[str, object]] = []

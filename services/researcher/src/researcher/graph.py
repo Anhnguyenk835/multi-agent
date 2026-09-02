@@ -19,6 +19,7 @@ from researcher.errors import GroundingError, ProviderConfigurationError, ToolCa
 from researcher.llm_schema import LLMFindingsResponse
 from researcher.prompts import SYSTEM_PROMPT
 from researcher.settings import DemoSettings, ResearcherAISettings
+from researcher.telemetry import extracted_request_context, operation_span
 from researcher.tools import build_search_tool, parse_tool_message
 
 
@@ -50,21 +51,33 @@ def _extract_request(state: dict[str, object]) -> ResearcherInput:
 def _build_graph(runtime_settings: DemoSettings):
     ai_settings = runtime_settings.ai
 
-    async def run_react_agent(state: ResearcherRemoteState) -> dict[str, object]:
+    async def run_react_agent(
+        state: ResearcherRemoteState,
+        config: RunnableConfig,
+    ) -> dict[str, object]:
         request = _extract_request(state)
-        search_tool = build_search_tool(runtime_settings.exa)
-        agent = create_agent(
-            model=_build_chat_model(ai_settings),
-            tools=[search_tool],
-            system_prompt=SYSTEM_PROMPT,
-            response_format=ToolStrategy(LLMFindingsResponse),
-            middleware=[
-                ToolCallLimitMiddleware(tool_name="search", run_limit=3, exit_behavior="end"),
-            ],
-        )
-        final_state = await agent.ainvoke(
-            {"messages": [{"role": "user", "content": request.query}]},
-        )
+        configurable = config.get("configurable", {})
+        carrier = configurable.get("otel_headers", {})
+        with extracted_request_context(request, carrier), operation_span(
+            "researcher.run_react_agent",
+            observation_type="agent",
+            attributes={"app.agent": "researcher", "app.attempt": request.attempt},
+        ):
+            search_tool = build_search_tool(runtime_settings.exa)
+            agent = create_agent(
+                model=_build_chat_model(ai_settings),
+                tools=[search_tool],
+                system_prompt=SYSTEM_PROMPT,
+                response_format=ToolStrategy(LLMFindingsResponse),
+                middleware=[
+                    ToolCallLimitMiddleware(
+                        tool_name="search", run_limit=3, exit_behavior="end"
+                    ),
+                ],
+            )
+            final_state = await agent.ainvoke(
+                {"messages": [{"role": "user", "content": request.query}]},
+            )
 
         sources_by_tag = {}
         for message in final_state["messages"]:

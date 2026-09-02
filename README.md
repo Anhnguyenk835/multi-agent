@@ -23,7 +23,7 @@ docs/                  Demo, architecture, implementation, and deployment docs
 
 ```bash
 uv sync --all-packages --all-groups
-uv run --package orchestrator uvicorn orchestrator.main:app --reload
+uv run --env-file services/orchestrator/.env --package orchestrator opentelemetry-instrument uvicorn orchestrator.main:app --reload
 ```
 
 Use `make lint` and `make test` for workspace checks. Every service declares
@@ -44,6 +44,19 @@ Before starting the stack, copy `infra/llm-gateway/.env.example` to
 key. Agent service `.env` files contain only their own LiteLLM virtual key and
 logical route; provider credentials must not be copied into them.
 
+Copy `infra/observability/.env.example` to `infra/observability/.env`, choose
+the endpoint for your Langfuse Cloud region, and set `LANGFUSE_AUTH` to the
+base64 encoding of `public_key:secret_key`. Applications send OTLP only to the
+local Collector; Langfuse credentials are never exposed to service containers.
+Set `OTEL_SDK_DISABLED=true` to run a service without tracing.
+
+The `opentelemetry-instrument` runtime owns SDK bootstrap, OTLP export, and
+framework instrumentation. Each service owns only its OTel dependencies,
+business spans, correlation, and exceptional propagation boundaries in its
+local `<service>/telemetry.py` module. There is no shared runtime telemetry
+package. Teams must keep the common attribute contract (`app.*`, `gen_ai.*`,
+and `langfuse.*`) stable; the Collector owns export policy and credentials.
+
 Every service has its own `services/<service>/Dockerfile`, so service-specific
 runtime dependencies and startup commands remain isolated. The Orchestrator is
 available at `http://localhost:8000/health`. The deterministic Phase 2 services
@@ -56,6 +69,7 @@ are exposed as follows:
 | Analyst | `POST http://localhost:8002/analyze` | `GET /ready` |
 | Writer | `POST http://localhost:8003/write` | `GET /ready` |
 | LiteLLM gateway | OpenAI-compatible API on `http://localhost:4000/v1` | `GET /health/liveliness` |
+| OTel Collector | OTLP gRPC `localhost:4317`, HTTP `localhost:4318` | Extension on `localhost:13133` |
 | PostgreSQL | Checkpoints on `localhost:5434` | `pg_isready` |
 
 The Orchestrator exposes `POST http://localhost:8000/workflows` and stores each

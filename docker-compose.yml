@@ -4,6 +4,24 @@ include:
   - path: ./infra/llm-gateway/docker-compose.yml
 
 services:
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.136.0
+    command: ["--config=/etc/otelcol-contrib/config.yaml"]
+    env_file:
+      - path: infra/observability/.env
+        required: false
+    volumes:
+      - ./infra/observability/otel-collector.yaml:/etc/otelcol-contrib/config.yaml:ro
+    ports:
+      - "127.0.0.1:4317:4317"
+      - "127.0.0.1:4318:4318"
+      - "127.0.0.1:13133:13133"
+    healthcheck:
+      test: ["CMD", "/otelcol-contrib", "components"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
   orchestrator:
     build:
       context: .
@@ -11,6 +29,17 @@ services:
     env_file:
       - services/orchestrator/.env
     environment:
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+      OTEL_EXPORTER_OTLP_INSECURE: "true"
+      OTEL_EXPORTER_OTLP_PROTOCOL: grpc
+      OTEL_LOGS_EXPORTER: none
+      OTEL_METRICS_EXPORTER: none
+      OTEL_PROPAGATORS: tracecontext,baggage
+      OTEL_RESOURCE_ATTRIBUTES: deployment.environment.name=local,service.version=0.1.0
+      OTEL_SERVICE_NAME: orchestrator
+      OTEL_TRACES_EXPORTER: otlp
+      OTEL_TRACES_SAMPLER: parentbased_always_on
+      OTEL_PYTHON_FASTAPI_EXCLUDED_URLS: /health,/ready
       ANALYST_URL: http://analyst:8002
       CHECKPOINT_DATABASE_URL: postgresql://distributed_agents:distributed_agents@postgres:5432/distributed_agents?sslmode=disable
       ANALYST_BACKOFF_SECONDS: ${ORCHESTRATOR_ANALYST_BACKOFF_SECONDS:-0.1}
@@ -31,6 +60,8 @@ services:
     ports:
       - "8000:8000"
     depends_on:
+      otel-collector:
+        condition: service_started
       researcher:
         condition: service_healthy
       market-agent:
@@ -73,7 +104,20 @@ services:
       - services/researcher/.env
     environment:
       LLM_GATEWAY_BASE_URL: http://litellm:4000/v1
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+      OTEL_EXPORTER_OTLP_INSECURE: "true"
+      OTEL_EXPORTER_OTLP_PROTOCOL: grpc
+      OTEL_LOGS_EXPORTER: none
+      OTEL_METRICS_EXPORTER: none
+      OTEL_PROPAGATORS: tracecontext,baggage
+      OTEL_RESOURCE_ATTRIBUTES: deployment.environment.name=local,service.version=0.1.0
+      OTEL_SERVICE_NAME: researcher
+      OTEL_TRACES_EXPORTER: otlp
+      OTEL_TRACES_SAMPLER: parentbased_always_on
+      OTEL_PYTHON_FASTAPI_EXCLUDED_URLS: /ok
     depends_on:
+      otel-collector:
+        condition: service_started
       litellm:
         condition: service_healthy
     healthcheck:
@@ -95,7 +139,19 @@ services:
       DEMO_FAILURE_DELAY_MS: ${MARKET_FAILURE_DELAY_MS:-250}
       DEMO_FAILURE_MODE: ${MARKET_FAILURE_MODE:-none}
       LLM_GATEWAY_BASE_URL: http://litellm:4000/v1
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+      OTEL_EXPORTER_OTLP_INSECURE: "true"
+      OTEL_EXPORTER_OTLP_PROTOCOL: grpc
+      OTEL_LOGS_EXPORTER: none
+      OTEL_METRICS_EXPORTER: none
+      OTEL_PROPAGATORS: tracecontext,baggage
+      OTEL_RESOURCE_ATTRIBUTES: deployment.environment.name=local,service.version=0.1.0
+      OTEL_SERVICE_NAME: market-agent
+      OTEL_TRACES_EXPORTER: otlp
+      OTEL_TRACES_SAMPLER: parentbased_always_on
     depends_on:
+      otel-collector:
+        condition: service_started
       litellm:
         condition: service_healthy
     healthcheck:
@@ -116,7 +172,20 @@ services:
       DEMO_FAILURE_DELAY_MS: ${ANALYST_FAILURE_DELAY_MS:-250}
       DEMO_FAILURE_MODE: ${ANALYST_FAILURE_MODE:-none}
       LLM_GATEWAY_BASE_URL: http://litellm:4000/v1
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+      OTEL_EXPORTER_OTLP_INSECURE: "true"
+      OTEL_EXPORTER_OTLP_PROTOCOL: grpc
+      OTEL_LOGS_EXPORTER: none
+      OTEL_METRICS_EXPORTER: none
+      OTEL_PROPAGATORS: tracecontext,baggage
+      OTEL_RESOURCE_ATTRIBUTES: deployment.environment.name=local,service.version=0.1.0
+      OTEL_SERVICE_NAME: analyst
+      OTEL_TRACES_EXPORTER: otlp
+      OTEL_TRACES_SAMPLER: parentbased_always_on
+      OTEL_PYTHON_FASTAPI_EXCLUDED_URLS: /health,/ready
     depends_on:
+      otel-collector:
+        condition: service_started
       litellm:
         condition: service_healthy
     healthcheck:
@@ -137,7 +206,20 @@ services:
       DEMO_FAILURE_DELAY_MS: ${WRITER_FAILURE_DELAY_MS:-250}
       DEMO_FAILURE_MODE: ${WRITER_FAILURE_MODE:-none}
       LLM_GATEWAY_BASE_URL: http://litellm:4000/v1
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+      OTEL_EXPORTER_OTLP_INSECURE: "true"
+      OTEL_EXPORTER_OTLP_PROTOCOL: grpc
+      OTEL_LOGS_EXPORTER: none
+      OTEL_METRICS_EXPORTER: none
+      OTEL_PROPAGATORS: tracecontext,baggage
+      OTEL_RESOURCE_ATTRIBUTES: deployment.environment.name=local,service.version=0.1.0
+      OTEL_SERVICE_NAME: writer
+      OTEL_TRACES_EXPORTER: otlp
+      OTEL_TRACES_SAMPLER: parentbased_always_on
+      OTEL_PYTHON_FASTAPI_EXCLUDED_URLS: /health,/ready
     depends_on:
+      otel-collector:
+        condition: service_started
       litellm:
         condition: service_healthy
     healthcheck:

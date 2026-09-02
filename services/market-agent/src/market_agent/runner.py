@@ -13,6 +13,7 @@ from market_agent.errors import (
     ProviderUnavailableError,
 )
 from market_agent.settings import DemoSettings
+from market_agent.telemetry import operation_span
 
 _NO_RETRY = (
     openai.AuthenticationError,
@@ -51,23 +52,28 @@ class MarketAgentRunner:
 
     async def analyze(self, query: str, request_id: str) -> MarketResult:
         settings = self._settings
-        try:
-            agent = build_live_agent(
-                "market_researcher",
-                settings.ai,
-                settings.exa,
-            )
-            events = await _run_agent(agent, query, request_id)
-        except _NO_RETRY as error:
-            raise ProviderConfigurationError(
-                "LLM gateway rejected the market agent request"
-            ) from error
-        except Exception as error:
-            raise ProviderUnavailableError("LLM gateway is unavailable") from error
-        output = extract_market_output(events)
+        with operation_span(
+            "market-agent.run_adk_agent",
+            observation_type="agent",
+            attributes={"app.agent": "market"},
+        ):
+            try:
+                agent = build_live_agent(
+                    "market_researcher",
+                    settings.ai,
+                    settings.exa,
+                )
+                events = await _run_agent(agent, query, request_id)
+            except _NO_RETRY as error:
+                raise ProviderConfigurationError(
+                    "LLM gateway rejected the market agent request"
+                ) from error
+            except Exception as error:
+                raise ProviderUnavailableError("LLM gateway is unavailable") from error
+            output = extract_market_output(events)
 
-        if output is None:
-            raise InvalidOutputError("market agent completed without an output event")
+            if output is None:
+                raise InvalidOutputError("market agent completed without an output event")
 
         return MarketResult(
             market_signals=list(output["market_signals"]),

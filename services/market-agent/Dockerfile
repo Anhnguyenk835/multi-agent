@@ -19,4 +19,4 @@ RUN uv sync --frozen --no-dev --package market-agent
 # and "uv run" re-checks the lock/sync state on every cold start, which costs
 # 60-90s recompiling bytecode on Cloud Run's ephemeral filesystem every time
 # an instance scales up from zero.
-CMD ["/app/.venv/bin/python", "-m", "market_agent.server"]
+CMD ["/app/.venv/bin/opentelemetry-instrument", "/app/.venv/bin/python", "-m", "market_agent.server"]

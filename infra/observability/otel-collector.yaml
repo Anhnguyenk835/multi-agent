@@ -1,0 +1,58 @@
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 256
+    spike_limit_mib: 64
+  transform/langfuse:
+    error_mode: ignore
+    trace_statements:
+      - context: span
+        statements:
+          - set(attributes["langfuse.observation.type"], "generation") where attributes["gen_ai.operation.name"] != nil and attributes["langfuse.observation.type"] == nil
+  filter/noisy_framework_spans:
+    error_mode: ignore
+    traces:
+      span:
+        - attributes["asgi.event.type"] != nil
+        - attributes["rpc.service"] == "grpc.health.v1.Health"
+  batch:
+    send_batch_size: 512
+    timeout: 2s
+
+exporters:
+  otlphttp/langfuse:
+    endpoint: ${env:LANGFUSE_OTEL_ENDPOINT:-https://cloud.langfuse.com/api/public/otel}
+    headers:
+      Authorization: Basic ${env:LANGFUSE_AUTH}
+      x-langfuse-ingestion-version: "4"
+    sending_queue:
+      enabled: true
+      queue_size: 2048
+    retry_on_failure:
+      enabled: true
+      initial_interval: 1s
+      max_interval: 30s
+      max_elapsed_time: 300s
+
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+
+service:
+  extensions: [health_check]
+  telemetry:
+    logs:
+      level: info
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, filter/noisy_framework_spans, transform/langfuse, batch]
+      exporters: [otlphttp/langfuse]

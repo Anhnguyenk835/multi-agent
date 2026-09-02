@@ -11,6 +11,7 @@ from market_agent.errors import (
 )
 from market_agent.runner import MarketAgentRunner
 from market_agent.settings import DemoSettings, FailureMode
+from market_agent.telemetry import request_span
 
 
 class MarketAgentService(market_pb2_grpc.MarketAgentServicer):
@@ -43,7 +44,8 @@ class MarketAgentService(market_pb2_grpc.MarketAgentServicer):
             )
 
         try:
-            result = await self._runner.analyze(request.query, metadata.request_id)
+            with request_span(request):
+                result = await self._runner.analyze(request.query, metadata.request_id)
         except ProviderConfigurationError:
             return _failure_response(
                 metadata,

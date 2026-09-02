@@ -3,6 +3,8 @@ import json
 import logging
 from collections.abc import Awaitable, Callable
 from datetime import datetime
+from functools import wraps
+from inspect import iscoroutinefunction
 from time import perf_counter
 
 from distributed_agent_contracts import (
@@ -24,8 +26,43 @@ from orchestrator.errors import AgentCallError
 from orchestrator.retry import invoke_with_retry
 from orchestrator.state import AgentBranch, WorkflowState
 from orchestrator.streaming import emit_event, safe_source_url, sanitize_query
+from orchestrator.telemetry import operation_span
 
 logger = logging.getLogger("uvicorn.error")
+
+
+def _traced_node(name: str):
+    def decorate(function):
+        def attributes(state):
+            return {
+                "app.workflow_node": name,
+                "app.request_id": str(state["request_id"]),
+                "app.business_trace_id": state["trace_id"],
+            }
+
+        if iscoroutinefunction(function):
+
+            @wraps(function)
+            async def async_wrapper(self, state):
+                with operation_span(
+                    f"orchestrator.node {name}",
+                    attributes=attributes(state),
+                ):
+                    return await function(self, state)
+
+            return async_wrapper
+
+        @wraps(function)
+        def sync_wrapper(self, state):
+            with operation_span(
+                f"orchestrator.node {name}",
+                attributes=attributes(state),
+            ):
+                return function(self, state)
+
+        return sync_wrapper
+
+    return decorate
 
 
 class WorkflowNodes:
@@ -40,6 +77,7 @@ class WorkflowNodes:
         self._settings = settings
         self._sleep = sleep
 
+    @_traced_node("call_researcher")
     async def call_researcher(self, state: WorkflowState) -> dict[str, object]:
         _emit(state, "agent.started", "researcher")
         _emit(
@@ -103,6 +141,7 @@ class WorkflowNodes:
             )
         return {"research_branch": branch.model_dump(mode="json")}
 
+    @_traced_node("call_market")
     async def call_market(self, state: WorkflowState) -> dict[str, object]:
         _emit(state, "agent.started", "market")
         _emit(
@@ -124,6 +163,7 @@ class WorkflowNodes:
         )
         return {"market_branch": branch.model_dump(mode="json")}
 
+    @_traced_node("join_research")
     def join_research(self, state: WorkflowState) -> dict[str, object]:
         research = AgentBranch.model_validate(state["research_branch"])
         market = AgentBranch.model_validate(state["market_branch"])
@@ -162,6 +202,7 @@ class WorkflowNodes:
         )
         return {"workflow_status": status, "warnings": warnings, "error": None}
 
+    @_traced_node("call_analyst")
     async def call_analyst(self, state: WorkflowState) -> dict[str, object]:
         _emit(state, "agent.started", "analyst")
         _emit(
@@ -199,6 +240,7 @@ class WorkflowNodes:
             updates["warnings"] = _deduplicate([*state.get("warnings", []), *branch.warnings])
         return updates
 
+    @_traced_node("call_writer")
     async def call_writer(self, state: WorkflowState) -> dict[str, object]:
         _emit(state, "agent.started", "writer")
         _emit(
@@ -236,6 +278,7 @@ class WorkflowNodes:
         updates.update(_branch_status_updates(branch))
         return updates
 
+    @_traced_node("finalize_success")
     def finalize_success(self, state: WorkflowState) -> dict[str, object]:
         writer = AgentBranch.model_validate(state["writer_branch"])
         brief = WriterResponse.model_validate(writer.data)
@@ -245,6 +288,7 @@ class WorkflowNodes:
             "error": None,
         }
 
+    @_traced_node("finalize_failure")
     def finalize_failure(self, state: WorkflowState) -> dict[str, object]:
         return {"final_brief": None, "workflow_status": ContractStatus.FAILED}
 
@@ -257,9 +301,23 @@ class WorkflowNodes:
     ) -> AgentBranch:
         started_at = perf_counter()
         deadline_at = _deadline_from_state(state)
+
+        async def traced_operation(attempt: int):
+            with operation_span(
+                f"agent.call {agent}",
+                observation_type="agent",
+                attributes={
+                    "app.agent": agent,
+                    "app.attempt": attempt,
+                    "app.request_id": str(state["request_id"]),
+                    "app.business_trace_id": state["trace_id"],
+                },
+            ):
+                return await operation(attempt)
+
         try:
             result = await invoke_with_retry(
-                operation,
+                traced_operation,
                 policy,
                 deadline_at,
                 sleep=self._sleep,

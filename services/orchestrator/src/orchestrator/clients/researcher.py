@@ -19,6 +19,7 @@ from langgraph_sdk.errors import (
 from pydantic import ValidationError
 
 from orchestrator.errors import AgentCallError
+from orchestrator.telemetry import inject_context
 
 
 class ResearcherClient:
@@ -26,8 +27,13 @@ class ResearcherClient:
         self._graph = RemoteGraph("researcher", url=url)
 
     async def analyze(self, request: ResearcherInput) -> ResearcherOutput:
+        headers = inject_context()
         try:
-            payload = await self._graph.ainvoke(request.model_dump(mode="json"))
+            payload = await self._graph.ainvoke(
+                request.model_dump(mode="json"),
+                config={"configurable": {"otel_headers": headers}},
+                headers=headers,
+            )
             response = ResearcherOutput.model_validate(payload)
         except (ValidationError, APIResponseValidationError) as error:
             raise AgentCallError(
@@ -54,9 +60,12 @@ class ResearcherClient:
         on_event: Callable[[str, dict[str, object]], None],
     ) -> ResearcherOutput:
         final: ResearcherOutput | None = None
+        headers = inject_context()
         try:
             async for chunk in self._graph.astream(
                 request.model_dump(mode="json"),
+                config={"configurable": {"otel_headers": headers}},
+                headers=headers,
                 stream_mode=["custom", "values"],
                 version="v2",
             ):

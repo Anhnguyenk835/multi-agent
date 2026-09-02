@@ -12,6 +12,13 @@ services:
       - .env
     environment:
       DATABASE_URL: postgresql://litellm:litellm@db:5432/litellm
+      DEPLOYMENT_ENVIRONMENT: local
+      LITELLM_OTEL_V2: "true"
+      OTEL_ENDPOINT: http://otel-collector:4318
+      OTEL_ENVIRONMENT_NAME: local
+      OTEL_EXPORTER: otlp_http
+      OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT: no_content
+      OTEL_SERVICE_NAME: litellm-gateway
       REDIS_HOST: redis
       REDIS_PORT: "6379"
       REDIS_SSL: "false"
@@ -30,6 +37,8 @@ services:
     volumes:
       - ./config.yaml:/app/config.yaml:ro
     depends_on:
+      otel-collector:
+        condition: service_started
       db:
         condition: service_healthy
       redis:

@@ -12,6 +12,10 @@ from fastapi.responses import JSONResponse
 from analyst.analysis import analyze_live
 from analyst.errors import InvalidOutputError, ProviderConfigurationError, ProviderUnavailableError
 from analyst.settings import DemoSettings, FailureMode
+from analyst.telemetry import (
+    operation_span,
+    request_context,
+)
 
 
 def create_app(settings: DemoSettings | None = None) -> FastAPI:
@@ -29,22 +33,12 @@ def create_app(settings: DemoSettings | None = None) -> FastAPI:
     @app.post("/analyze", response_model=AnalysisResponse)
     async def analyze(request: AnalysisRequest):
         try:
-            await runtime_settings.apply_delay()
-            if runtime_settings.failure_mode is FailureMode.TRANSIENT_ERROR:
-                failure = AnalysisResponse(
-                    **copy_request_metadata(request),
-                    status=ContractStatus.FAILED,
-                    error=ContractError(
-                        code=ErrorCode.UPSTREAM_UNAVAILABLE,
-                        message="injected transient Analyst failure",
-                        retryable=True,
-                    ),
-                )
-                return _respond(failure.model_dump(mode="json"), 503)
-            if runtime_settings.failure_mode is FailureMode.INVALID_RESPONSE:
-                return _respond({"status": "invalid"}, 200)
-
-            return await analyze_live(request, runtime_settings.ai)
+            with request_context(request), operation_span(
+                "analyst.analyze",
+                observation_type="agent",
+                attributes={"app.agent": "analyst", "app.attempt": request.attempt},
+            ):
+                return await _analyze(request, runtime_settings)
         except ProviderConfigurationError:
             failure = _failure_response(
                 request,
@@ -69,6 +63,24 @@ def create_app(settings: DemoSettings | None = None) -> FastAPI:
                 retryable=False,
             )
             return _respond(failure.model_dump(mode="json"), 502)
+
+    async def _analyze(request: AnalysisRequest, runtime_settings: DemoSettings):
+        await runtime_settings.apply_delay()
+        if runtime_settings.failure_mode is FailureMode.TRANSIENT_ERROR:
+            failure = AnalysisResponse(
+                **copy_request_metadata(request),
+                status=ContractStatus.FAILED,
+                error=ContractError(
+                    code=ErrorCode.UPSTREAM_UNAVAILABLE,
+                    message="injected transient Analyst failure",
+                    retryable=True,
+                ),
+            )
+            return _respond(failure.model_dump(mode="json"), 503)
+        if runtime_settings.failure_mode is FailureMode.INVALID_RESPONSE:
+            return _respond({"status": "invalid"}, 200)
+
+        return await analyze_live(request, runtime_settings.ai)
 
     return app
 

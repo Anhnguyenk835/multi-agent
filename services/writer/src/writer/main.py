@@ -17,6 +17,10 @@ from writer.brief import (
 )
 from writer.errors import InvalidOutputError, ProviderConfigurationError, ProviderUnavailableError
 from writer.settings import DemoSettings, FailureMode
+from writer.telemetry import (
+    operation_span,
+    request_context,
+)
 
 
 def create_app(settings: DemoSettings | None = None) -> FastAPI:
@@ -34,22 +38,27 @@ def create_app(settings: DemoSettings | None = None) -> FastAPI:
     @app.post("/write", response_model=WriterResponse)
     async def write(request: WriterRequest):
         try:
-            await runtime_settings.apply_delay()
-            if runtime_settings.failure_mode is FailureMode.TRANSIENT_ERROR:
-                failure = WriterResponse(
-                    **copy_request_metadata(request),
-                    status=ContractStatus.FAILED,
-                    error=ContractError(
-                        code=ErrorCode.UPSTREAM_UNAVAILABLE,
-                        message="injected transient Writer failure",
-                        retryable=True,
-                    ),
-                )
-                return _respond(failure.model_dump(mode="json"), 503)
-            if runtime_settings.failure_mode is FailureMode.INVALID_RESPONSE:
-                return _respond({"status": "invalid"}, 200)
+            with request_context(request), operation_span(
+                "writer.write",
+                observation_type="agent",
+                attributes={"app.agent": "writer", "app.attempt": request.attempt},
+            ):
+                await runtime_settings.apply_delay()
+                if runtime_settings.failure_mode is FailureMode.TRANSIENT_ERROR:
+                    failure = WriterResponse(
+                        **copy_request_metadata(request),
+                        status=ContractStatus.FAILED,
+                        error=ContractError(
+                            code=ErrorCode.UPSTREAM_UNAVAILABLE,
+                            message="injected transient Writer failure",
+                            retryable=True,
+                        ),
+                    )
+                    return _respond(failure.model_dump(mode="json"), 503)
+                if runtime_settings.failure_mode is FailureMode.INVALID_RESPONSE:
+                    return _respond({"status": "invalid"}, 200)
 
-            return await write_brief_live(request, runtime_settings.ai)
+                return await write_brief_live(request, runtime_settings.ai)
         except ProviderConfigurationError:
             failure = _failure_response(
                 request,
@@ -79,20 +88,25 @@ def create_app(settings: DemoSettings | None = None) -> FastAPI:
     async def stream_write(request: WriterRequest):
         async def events():
             try:
-                await runtime_settings.apply_delay()
-                if runtime_settings.failure_mode is FailureMode.TRANSIENT_ERROR:
-                    output = {
-                        "event": "writer.failed",
-                        "error": {
-                            "code": "UPSTREAM_UNAVAILABLE",
-                            "message": "Writer unavailable",
-                        },
-                    }
-                    yield _sse("writer.failed", {"error": output["error"]})
-                    return
-                stream = stream_brief_live(request, runtime_settings.ai)
-                async for event in stream:
-                    yield _sse(event["type"], event["data"])
+                with request_context(request), operation_span(
+                    "writer.write_stream",
+                    observation_type="agent",
+                    attributes={"app.agent": "writer", "app.attempt": request.attempt},
+                ):
+                    await runtime_settings.apply_delay()
+                    if runtime_settings.failure_mode is FailureMode.TRANSIENT_ERROR:
+                        output = {
+                            "event": "writer.failed",
+                            "error": {
+                                "code": "UPSTREAM_UNAVAILABLE",
+                                "message": "Writer unavailable",
+                            },
+                        }
+                        yield _sse("writer.failed", {"error": output["error"]})
+                        return
+                    stream = stream_brief_live(request, runtime_settings.ai)
+                    async for event in stream:
+                        yield _sse(event["type"], event["data"])
             except (ProviderConfigurationError, ProviderUnavailableError, InvalidOutputError) as error:
                 output = _stream_failure_output(error)
                 yield _sse("writer.failed", {"error": output["error"]})
