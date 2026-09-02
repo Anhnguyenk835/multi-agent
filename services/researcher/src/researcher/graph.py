@@ -13,6 +13,7 @@ from langchain.agents import create_agent
 from langchain.agents.middleware import ToolCallLimitMiddleware
 from langchain.agents.structured_output import ToolStrategy
 from langchain_core.messages import ToolMessage
+from langchain_core.runnables import RunnableConfig
 from langchain_openai import ChatOpenAI
 from langgraph.graph import END, START, StateGraph
 
@@ -154,8 +155,20 @@ def _build_live_graph(runtime_settings: DemoSettings):
     return builder.compile()
 
 
-def build_graph(settings: DemoSettings | None = None):
-    runtime_settings = settings or DemoSettings.from_environment()
+def build_graph(config: RunnableConfig):
+    """Create the graph when invoked by LangGraph Server.
+
+    LangGraph Server invokes graph factories with its runtime configuration as
+    their sole argument. Application settings always come from the service
+    environment; treating the server config as ``DemoSettings`` makes live runs
+    fail before the first model request.
+    """
+    del config
+    return build_graph_for_settings(DemoSettings.from_environment())
+
+
+def build_graph_for_settings(runtime_settings: DemoSettings):
+    """Create a graph with explicit settings for unit tests."""
     if runtime_settings.ai.ai_mode is AIMode.LIVE:
         return _build_live_graph(runtime_settings)
     return _build_fixture_graph(runtime_settings)

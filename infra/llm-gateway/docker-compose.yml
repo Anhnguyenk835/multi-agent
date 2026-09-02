@@ -15,7 +15,6 @@ services:
       REDIS_HOST: redis
       REDIS_PORT: "6379"
       REDIS_SSL: "false"
-      REDIS_SSL_CA_CERTS: ""
       STORE_MODEL_IN_DB: "False"
     command:
       - --config

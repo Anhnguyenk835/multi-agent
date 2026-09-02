@@ -54,7 +54,6 @@ general_settings:
     port: os.environ/REDIS_PORT
     password: os.environ/REDIS_PASSWORD
     ssl: os.environ/REDIS_SSL
-    ssl_ca_certs: os.environ/REDIS_SSL_CA_CERTS
 
 # A route receives at most one retry before one approved fallback route. SDK
 # retries are disabled in every agent so this is the only retry policy.

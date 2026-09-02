@@ -6,7 +6,7 @@ from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage, BaseMessage, ToolCall
 from langchain_core.outputs import ChatGeneration, ChatResult
 from researcher.errors import GroundingError, ToolCallLimitReachedError
-from researcher.graph import build_graph
+from researcher.graph import build_graph, build_graph_for_settings
 from researcher.settings import (
     AIMode,
     DemoSettings,
@@ -24,7 +24,7 @@ async def test_researcher_returns_deterministic_contract() -> None:
         query="AI coding agents",
     )
 
-    result = await build_graph(DemoSettings()).ainvoke(request.model_dump(mode="json"))
+    result = await build_graph_for_settings(DemoSettings()).ainvoke(request.model_dump(mode="json"))
     response = ResearcherOutput.model_validate(result)
 
     assert response.status is ContractStatus.SUCCESS
@@ -39,7 +39,7 @@ async def test_researcher_transient_failure_is_reproducible() -> None:
         trace_id="researcher-failure-trace",
         query="AI coding agents",
     )
-    graph = build_graph(DemoSettings(failure_mode=FailureMode.TRANSIENT_ERROR))
+    graph = build_graph_for_settings(DemoSettings(failure_mode=FailureMode.TRANSIENT_ERROR))
 
     with pytest.raises(RuntimeError, match="simulated transient"):
         await graph.ainvoke(request.model_dump(mode="json"))
@@ -126,7 +126,9 @@ async def test_researcher_live_mode_grounds_findings_in_tool_results(monkeypatch
     monkeypatch.setattr("researcher.graph._build_chat_model", lambda settings: fake_model)
 
     request = ResearcherInput(request_id=uuid4(), trace_id="live-trace", query="AI coding agents")
-    result = await build_graph(_live_demo_settings()).ainvoke(request.model_dump(mode="json"))
+    result = await build_graph_for_settings(_live_demo_settings()).ainvoke(
+        request.model_dump(mode="json")
+    )
     response = ResearcherOutput.model_validate(result)
 
     assert response.status is ContractStatus.SUCCESS
@@ -171,7 +173,7 @@ async def test_researcher_live_mode_rejects_unknown_source_tag(monkeypatch) -> N
     request = ResearcherInput(request_id=uuid4(), trace_id="live-trace-2", query="AI coding agents")
 
     with pytest.raises(GroundingError):
-        await build_graph(_live_demo_settings()).ainvoke(request.model_dump(mode="json"))
+        await build_graph_for_settings(_live_demo_settings()).ainvoke(request.model_dump(mode="json"))
 
 
 @pytest.mark.anyio
@@ -212,4 +214,20 @@ async def test_researcher_live_mode_raises_when_search_tool_call_limit_reached(m
     request = ResearcherInput(request_id=uuid4(), trace_id="limit-trace", query="AI coding agents")
 
     with pytest.raises(ToolCallLimitReachedError):
-        await build_graph(_live_demo_settings()).ainvoke(request.model_dump(mode="json"))
+        await build_graph_for_settings(_live_demo_settings()).ainvoke(request.model_dump(mode="json"))
+
+
+@pytest.mark.anyio
+async def test_researcher_graph_factory_accepts_langgraph_server_config(monkeypatch) -> None:
+    monkeypatch.setenv("AI_MODE", AIMode.FIXTURE.value)
+    request = ResearcherInput(
+        request_id=uuid4(),
+        trace_id="server-config-trace",
+        query="AI coding agents",
+    )
+
+    result = await build_graph({"configurable": {"thread_id": "server-thread"}}).ainvoke(
+        request.model_dump(mode="json")
+    )
+
+    assert ResearcherOutput.model_validate(result).status is ContractStatus.SUCCESS

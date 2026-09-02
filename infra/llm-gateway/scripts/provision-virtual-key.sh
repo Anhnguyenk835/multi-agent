@@ -32,7 +32,10 @@ case $1 in
     route=market-standard
     budget=25
     rpm=20
-    tpm=40000
+    # A market run can retain several Exa result sets across tool calls. With
+    # two concurrent runs, 40k TPM rejects otherwise valid requests before
+    # LiteLLM can call the routed provider.
+    tpm=120000
     parallel=2
     output_tokens=1800
     ;;
