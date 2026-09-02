@@ -31,21 +31,6 @@ def request_payload() -> dict[str, object]:
     }
 
 
-def test_analyze_uses_contract_and_preserves_metadata() -> None:
-    client = TestClient(create_app(DemoSettings()))
-    response = client.post("/analyze", json=request_payload())
-
-    assert response.status_code == 200
-    body = response.json()
-    assert body["status"] == "success"
-    assert body["trace_id"] == "trace-phase-2"
-    assert body["content"]
-    assert body["citations"] == [
-        {"title": "Fixture", "url": "https://example.com/research", "publisher": "Demo Research"}
-    ]
-    assert "https://example.com/research" in body["content"]
-
-
 def test_invalid_payload_is_rejected_before_chain() -> None:
     payload = request_payload()
     payload["research_findings"] = []
@@ -66,10 +51,10 @@ def test_transient_failure_is_contract_shaped_and_retryable() -> None:
     }
 
 
-def test_analyze_live_mode_uses_only_generated_content(monkeypatch) -> None:
+def test_analyze_uses_only_generated_content(monkeypatch) -> None:
     from analyst import llm_client
     from analyst.llm_schema import LLMAnalysis
-    from analyst.settings import AIMode, AnalystAISettings
+    from analyst.settings import AnalystAISettings
 
     async def fake_generate_structured(*, schema, system_prompt, user_prompt, settings, **kwargs):
         assert schema is LLMAnalysis
@@ -78,9 +63,7 @@ def test_analyze_live_mode_uses_only_generated_content(monkeypatch) -> None:
 
     monkeypatch.setattr(llm_client, "generate_structured", fake_generate_structured)
 
-    settings = DemoSettings(
-        ai=AnalystAISettings(ai_mode=AIMode.LIVE, gateway_api_key="test-key")
-    )
+    settings = DemoSettings(ai=AnalystAISettings(gateway_api_key="test-key"))
     client = TestClient(create_app(settings))
     response = client.post("/analyze", json=request_payload())
 

@@ -5,7 +5,7 @@ import openai
 import pytest
 from analyst.errors import InvalidOutputError, ProviderConfigurationError, ProviderUnavailableError
 from analyst.llm_client import generate_structured
-from analyst.settings import AIMode, AnalystAISettings
+from analyst.settings import AnalystAISettings
 from pydantic import BaseModel, ConfigDict, Field
 
 
@@ -17,7 +17,6 @@ class _Answer(BaseModel):
 
 def _live_settings(**overrides: object) -> AnalystAISettings:
     defaults: dict[str, object] = {
-        "ai_mode": AIMode.LIVE,
         "gateway_api_key": "gateway-test-key",
         "llm_timeout_seconds": 1.0,
     }

@@ -6,8 +6,6 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-from analyst.errors import ProviderConfigurationError
-
 # Own .env per service, not a shared root file.
 load_dotenv(Path(__file__).resolve().parents[2] / ".env")
 
@@ -25,11 +23,6 @@ _MODEL_ID_TRANSLATION = str.maketrans(
 )
 
 
-class AIMode(StrEnum):
-    FIXTURE = "fixture"
-    LIVE = "live"
-
-
 class FailureMode(StrEnum):
     NONE = "none"
     TIMEOUT = "timeout"
@@ -39,7 +32,6 @@ class FailureMode(StrEnum):
 
 @dataclass(frozen=True, slots=True)
 class AnalystAISettings:
-    ai_mode: AIMode = AIMode.FIXTURE
     gateway_api_key: str | None = None
     gateway_base_url: str = _DEFAULT_GATEWAY_BASE_URL
     model_route: str = _DEFAULT_MODEL_ROUTE
@@ -48,15 +40,10 @@ class AnalystAISettings:
 
     @classmethod
     def from_environment(cls) -> "AnalystAISettings":
-        ai_mode = AIMode(os.getenv("AI_MODE", AIMode.FIXTURE.value))
         gateway_api_key = os.getenv("LLM_GATEWAY_API_KEY") or None
         gateway_base_url = os.getenv("LLM_GATEWAY_BASE_URL") or _DEFAULT_GATEWAY_BASE_URL
 
-        if ai_mode is AIMode.LIVE and not gateway_api_key:
-            raise ProviderConfigurationError("AI_MODE=live requires LLM_GATEWAY_API_KEY to be set")
-
         return cls(
-            ai_mode=ai_mode,
             gateway_api_key=gateway_api_key,
             gateway_base_url=gateway_base_url.rstrip("/"),
             model_route=_model_id_from_environment("LLM_MODEL_ROUTE", _DEFAULT_MODEL_ROUTE),

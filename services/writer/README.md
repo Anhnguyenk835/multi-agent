@@ -11,9 +11,7 @@ flowchart LR
     G --> OUT([ExecutiveBrief<br/>content + citations])
 ```
 
-- `AI_MODE=fixture` (default): wraps Analyst's markdown with a title, no
-  API keys.
-- `AI_MODE=live`: its own `writer.llm_client.generate_structured`, prompted
+- Uses its own `writer.llm_client.generate_structured`, prompted
   with Analyst's `analysis` text and the numbered `citations` it can cite.
   Asked for a complete, detailed markdown brief (title, summary, insights,
   recommendations as prose/sections) — not a fixed number of bullets.
@@ -31,7 +29,7 @@ flowchart LR
 
 ## Configuration
 
-`services/writer/.env` (own copy): `AI_MODE`, `LLM_GATEWAY_BASE_URL`,
+`services/writer/.env` (own copy): `LLM_GATEWAY_BASE_URL`,
 `LLM_GATEWAY_API_KEY`, `LLM_MODEL_ROUTE`, `LLM_TIMEOUT_SECONDS`, and
 `LLM_MAX_OUTPUT_TOKENS`. No `EXA_*` or provider credential.
 

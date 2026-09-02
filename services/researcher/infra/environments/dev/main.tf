@@ -48,14 +48,12 @@ module "cloud_run" {
   startup_probe_path = "/ok"
 
   env_vars = {
-    AI_MODE                    = "live"
     LLM_GATEWAY_BASE_URL       = var.llm_gateway_base_url
     LLM_MODEL_ROUTE            = "research-fast"
     LLM_TIMEOUT_SECONDS        = "60"
     LLM_MAX_OUTPUT_TOKENS      = "2000"
     EXA_MAX_RESULTS            = "8"
     EXA_CONTENT_MAX_CHARACTERS = "4000"
-    DEMO_FAILURE_MODE          = "none"
   }
 
   secret_env_vars = {

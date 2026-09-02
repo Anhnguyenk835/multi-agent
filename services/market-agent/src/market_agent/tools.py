@@ -6,6 +6,7 @@ from urllib.parse import urlparse
 from exa_py import AsyncExa
 from google.adk.tools import ToolContext
 
+from market_agent.errors import ProviderConfigurationError
 from market_agent.settings import MarketExaSettings
 
 MAX_SEARCH_CALLS = 3
@@ -24,6 +25,8 @@ class ExaSourceResult:
 
 
 def _default_client_factory(settings: MarketExaSettings) -> AsyncExa:
+    if not settings.exa_api_key:
+        raise ProviderConfigurationError("EXA_API_KEY is required")
     return AsyncExa(api_key=settings.exa_api_key)
 
 

@@ -10,6 +10,7 @@ from langchain_core.messages import ToolMessage
 from langchain_core.tools import InjectedToolCallId, tool
 from langgraph.config import get_stream_writer
 
+from researcher.errors import ProviderConfigurationError
 from researcher.settings import ResearcherExaSettings
 
 
@@ -25,6 +26,8 @@ class ExaSourceResult:
 
 
 def _default_client_factory(settings: ResearcherExaSettings) -> AsyncExa:
+    if not settings.exa_api_key:
+        raise ProviderConfigurationError("EXA_API_KEY is required")
     return AsyncExa(api_key=settings.exa_api_key)
 
 

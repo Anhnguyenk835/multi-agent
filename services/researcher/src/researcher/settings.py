@@ -1,11 +1,8 @@
 import os
 from dataclasses import dataclass, field
-from enum import StrEnum
 from pathlib import Path
 
 from dotenv import load_dotenv
-
-from researcher.errors import ProviderConfigurationError
 
 # Own .env per service, not a shared root file.
 load_dotenv(Path(__file__).resolve().parents[2] / ".env")
@@ -24,21 +21,8 @@ _MODEL_ID_TRANSLATION = str.maketrans(
 )
 
 
-class AIMode(StrEnum):
-    FIXTURE = "fixture"
-    LIVE = "live"
-
-
-class FailureMode(StrEnum):
-    NONE = "none"
-    TIMEOUT = "timeout"
-    TRANSIENT_ERROR = "transient_error"
-    INVALID_RESPONSE = "invalid_response"
-
-
 @dataclass(frozen=True, slots=True)
 class ResearcherAISettings:
-    ai_mode: AIMode = AIMode.FIXTURE
     gateway_api_key: str | None = None
     gateway_base_url: str = _DEFAULT_GATEWAY_BASE_URL
     model_route: str = _DEFAULT_MODEL_ROUTE
@@ -47,15 +31,10 @@ class ResearcherAISettings:
 
     @classmethod
     def from_environment(cls) -> "ResearcherAISettings":
-        ai_mode = AIMode(os.getenv("AI_MODE", AIMode.FIXTURE.value))
         gateway_api_key = os.getenv("LLM_GATEWAY_API_KEY") or None
         gateway_base_url = os.getenv("LLM_GATEWAY_BASE_URL") or _DEFAULT_GATEWAY_BASE_URL
 
-        if ai_mode is AIMode.LIVE and not gateway_api_key:
-            raise ProviderConfigurationError("AI_MODE=live requires LLM_GATEWAY_API_KEY to be set")
-
         return cls(
-            ai_mode=ai_mode,
             gateway_api_key=gateway_api_key,
             gateway_base_url=gateway_base_url.rstrip("/"),
             model_route=_model_id_from_environment("LLM_MODEL_ROUTE", _DEFAULT_MODEL_ROUTE),
@@ -84,18 +63,12 @@ class ResearcherExaSettings:
 
 @dataclass(frozen=True, slots=True)
 class DemoSettings:
-    failure_mode: FailureMode = FailureMode.NONE
-    delay_seconds: float = 0.25
     ai: ResearcherAISettings = field(default_factory=ResearcherAISettings)
     exa: ResearcherExaSettings = field(default_factory=ResearcherExaSettings)
 
     @classmethod
     def from_environment(cls) -> "DemoSettings":
-        failure_mode = FailureMode(os.getenv("DEMO_FAILURE_MODE", FailureMode.NONE))
-        delay_ms = max(0, int(os.getenv("DEMO_FAILURE_DELAY_MS", "250")))
         return cls(
-            failure_mode=failure_mode,
-            delay_seconds=delay_ms / 1_000,
             ai=ResearcherAISettings.from_environment(),
             exa=ResearcherExaSettings.from_environment(),
         )

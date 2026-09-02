@@ -12,13 +12,11 @@ from fastapi import FastAPI
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from writer.brief import (
-    stream_brief_fixture,
     stream_brief_live,
-    write_brief_fixture,
     write_brief_live,
 )
 from writer.errors import InvalidOutputError, ProviderConfigurationError, ProviderUnavailableError
-from writer.settings import AIMode, DemoSettings, FailureMode
+from writer.settings import DemoSettings, FailureMode
 
 
 def create_app(settings: DemoSettings | None = None) -> FastAPI:
@@ -51,11 +49,7 @@ def create_app(settings: DemoSettings | None = None) -> FastAPI:
             if runtime_settings.failure_mode is FailureMode.INVALID_RESPONSE:
                 return _respond({"status": "invalid"}, 200)
 
-            return (
-                write_brief_fixture(request)
-                if runtime_settings.ai.ai_mode is AIMode.FIXTURE
-                else await write_brief_live(request, runtime_settings.ai)
-            )
+            return await write_brief_live(request, runtime_settings.ai)
         except ProviderConfigurationError:
             failure = _failure_response(
                 request,
@@ -96,11 +90,7 @@ def create_app(settings: DemoSettings | None = None) -> FastAPI:
                     }
                     yield _sse("writer.failed", {"error": output["error"]})
                     return
-                stream = (
-                    stream_brief_fixture(request)
-                    if runtime_settings.ai.ai_mode is AIMode.FIXTURE
-                    else stream_brief_live(request, runtime_settings.ai)
-                )
+                stream = stream_brief_live(request, runtime_settings.ai)
                 async for event in stream:
                     yield _sse(event["type"], event["data"])
             except (ProviderConfigurationError, ProviderUnavailableError, InvalidOutputError) as error:

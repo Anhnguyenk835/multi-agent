@@ -1,5 +1,3 @@
-import asyncio
-
 from distributed_agent_contracts import (
     ContractStatus,
     Finding,
@@ -17,15 +15,17 @@ from langchain_core.runnables import RunnableConfig
 from langchain_openai import ChatOpenAI
 from langgraph.graph import END, START, StateGraph
 
-from researcher.errors import GroundingError, ToolCallLimitReachedError
-from researcher.fixtures import build_findings
+from researcher.errors import GroundingError, ProviderConfigurationError, ToolCallLimitReachedError
 from researcher.llm_schema import LLMFindingsResponse
 from researcher.prompts import SYSTEM_PROMPT
-from researcher.settings import AIMode, DemoSettings, FailureMode, ResearcherAISettings
+from researcher.settings import DemoSettings, ResearcherAISettings
 from researcher.tools import build_search_tool, parse_tool_message
 
 
 def _build_chat_model(settings: ResearcherAISettings) -> ChatOpenAI:
+    if not settings.gateway_api_key:
+        raise ProviderConfigurationError("LLM_GATEWAY_API_KEY is required")
+
     return ChatOpenAI(
         model=settings.model_route,
         api_key=settings.gateway_api_key,
@@ -38,34 +38,6 @@ def _build_chat_model(settings: ResearcherAISettings) -> ChatOpenAI:
     )
 
 
-def _build_fixture_graph(runtime_settings: DemoSettings):
-    async def collect_findings(state: ResearcherRemoteState) -> dict[str, object]:
-        request = ResearcherInput.model_validate(state)
-        if runtime_settings.failure_mode is FailureMode.TIMEOUT:
-            await asyncio.sleep(runtime_settings.delay_seconds)
-        if runtime_settings.failure_mode is FailureMode.TRANSIENT_ERROR:
-            raise RuntimeError("simulated transient Researcher failure")
-        if runtime_settings.failure_mode is FailureMode.INVALID_RESPONSE:
-            return {"status": "invalid", "findings": "not-a-list"}
-
-        response = ResearcherOutput(
-            **copy_request_metadata(request),
-            status=ContractStatus.SUCCESS,
-            findings=build_findings(request.query),
-        )
-        return response.model_dump(mode="json")
-
-    builder = StateGraph(
-        ResearcherRemoteState,
-        input_schema=ResearcherInput,
-        output_schema=ResearcherOutput,
-    )
-    builder.add_node("collect_findings", collect_findings)
-    builder.add_edge(START, "collect_findings")
-    builder.add_edge("collect_findings", END)
-    return builder.compile()
-
-
 _RESEARCHER_INPUT_FIELDS = set(ResearcherInput.model_fields)
 
 
@@ -75,7 +47,7 @@ def _extract_request(state: dict[str, object]) -> ResearcherInput:
     )
 
 
-def _build_live_graph(runtime_settings: DemoSettings):
+def _build_graph(runtime_settings: DemoSettings):
     ai_settings = runtime_settings.ai
 
     async def run_react_agent(state: ResearcherRemoteState) -> dict[str, object]:
@@ -169,6 +141,4 @@ def build_graph(config: RunnableConfig):
 
 def build_graph_for_settings(runtime_settings: DemoSettings):
     """Create a graph with explicit settings for unit tests."""
-    if runtime_settings.ai.ai_mode is AIMode.LIVE:
-        return _build_live_graph(runtime_settings)
-    return _build_fixture_graph(runtime_settings)
+    return _build_graph(runtime_settings)

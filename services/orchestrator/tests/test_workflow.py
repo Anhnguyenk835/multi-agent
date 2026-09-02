@@ -24,7 +24,7 @@ from orchestrator.graph import build_workflow_graph
 from orchestrator.nodes import WorkflowNodes
 from orchestrator.workflow import WorkflowService
 
-FIXTURE_TIME = datetime(2026, 1, 1, tzinfo=UTC)
+SAMPLE_TIME = datetime(2026, 1, 1, tzinfo=UTC)
 
 
 @pytest.fixture
@@ -61,7 +61,7 @@ class FakeResearcher:
             status=ContractStatus.SUCCESS,
             findings=[
                 Finding(
-                    title="Research fixture",
+                    title="Research sample",
                     claim="Teams require measurable productivity.",
                     source=_source("research"),
                 )
@@ -83,7 +83,7 @@ class FlakyResearcher(FakeResearcher):
             status=ContractStatus.SUCCESS,
             findings=[
                 Finding(
-                    title="Research fixture",
+                    title="Research sample",
                     claim="Teams require measurable productivity.",
                     source=_source("research"),
                 )
@@ -153,15 +153,15 @@ class FakeWriter:
 
 def _source(suffix: str) -> Source:
     return Source(
-        title=f"{suffix} fixture",
+        title=f"{suffix} sample",
         url=f"https://example.com/{suffix}",
         publisher="Demo",
-        retrieved_at=FIXTURE_TIME,
+        retrieved_at=SAMPLE_TIME,
     )
 
 
 def _citation(suffix: str) -> Citation:
-    return Citation(title=f"{suffix} fixture", url=f"https://example.com/{suffix}", publisher="Demo")
+    return Citation(title=f"{suffix} sample", url=f"https://example.com/{suffix}", publisher="Demo")
 
 
 def _failure(message: str = "injected failure") -> AgentCallError:

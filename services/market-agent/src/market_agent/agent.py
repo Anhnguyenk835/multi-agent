@@ -1,13 +1,12 @@
-from collections.abc import AsyncGenerator
 from datetime import datetime
 
-from google.adk.agents import BaseAgent, InvocationContext, LlmAgent
+from google.adk.agents import LlmAgent
 from google.adk.events import Event
 from google.adk.labs.openai import OpenAILlm
 from google.adk.tools import FunctionTool
 from openai import AsyncOpenAI
 
-from market_agent.fixtures import market_fixture
+from market_agent.errors import ProviderConfigurationError
 from market_agent.llm_schema import LLMMarketResponse
 from market_agent.prompts import SYSTEM_PROMPT
 from market_agent.settings import MarketAISettings, MarketExaSettings
@@ -22,25 +21,6 @@ def _to_unix_ms(value: datetime | str | None) -> int:
     if isinstance(value, str):
         value = datetime.fromisoformat(value)
     return int(value.timestamp() * 1000)
-
-
-class DeterministicMarketAgent(BaseAgent):
-    """Google ADK agent whose output is stable and requires no model credentials."""
-
-    async def _run_async_impl(
-        self,
-        ctx: InvocationContext,
-    ) -> AsyncGenerator[Event, None]:
-        parts = ctx.user_content.parts if ctx.user_content else []
-        query = " ".join(part.text for part in parts if part.text).strip()
-        fixture = market_fixture(query)
-        yield Event(
-            author=self.name,
-            output={
-                "market_signals": fixture.market_signals,
-                "competitors": fixture.competitors,
-            },
-        )
 
 
 def submit_market_analysis(response: LLMMarketResponse) -> dict[str, str]:
@@ -70,6 +50,9 @@ def build_live_agent(
     `submit_market_analysis` tool rather than via `LlmAgent.output_schema`,
     matching the tag-grounding pattern used by Researcher's search tool.
     """
+    if not ai_settings.gateway_api_key:
+        raise ProviderConfigurationError("LLM_GATEWAY_API_KEY is required")
+
     search = build_search_function(exa_settings)
     gateway_client = AsyncOpenAI(
         api_key=ai_settings.gateway_api_key,

@@ -20,21 +20,6 @@ def request_payload() -> dict[str, object]:
     }
 
 
-def test_write_returns_deterministic_brief_and_preserves_metadata() -> None:
-    response = TestClient(create_app(DemoSettings())).post("/write", json=request_payload())
-
-    assert response.status_code == 200
-    body = response.json()
-    assert body["status"] == "success"
-    assert body["trace_id"] == "trace-phase-2"
-    assert body["content"].startswith("# Executive brief: AI coding assistants")
-    assert "Teams prioritize measurable productivity." in body["content"]
-    assert body["warnings"] == ["Fixture data only"]
-    assert body["citations"] == [
-        {"title": "Fixture", "url": "https://example.com/research", "publisher": "Demo Research"}
-    ]
-
-
 def test_invalid_payload_is_rejected() -> None:
     payload = request_payload()
     payload["contract_version"] = "v2"
@@ -52,20 +37,10 @@ def test_transient_failure_is_contract_shaped_and_retryable() -> None:
     assert response.json()["error"]["retryable"] is True
 
 
-def test_write_stream_returns_fixture_deltas_and_terminal_contract() -> None:
-    response = TestClient(create_app(DemoSettings())).post("/write/stream", json=request_payload())
-
-    assert response.status_code == 200
-    assert response.headers["content-type"].startswith("text/event-stream")
-    assert "event: writer.delta" in response.text
-    assert "event: writer.completed" in response.text
-    assert "Executive brief: AI coding assistants" in response.text
-
-
-def test_write_live_mode_uses_only_generated_content(monkeypatch) -> None:
+def test_write_uses_only_generated_content(monkeypatch) -> None:
     from writer import llm_client
     from writer.llm_schema import LLMBrief
-    from writer.settings import AIMode, WriterAISettings
+    from writer.settings import WriterAISettings
 
     async def fake_generate_structured(*, schema, system_prompt, user_prompt, settings, **kwargs):
         assert schema is LLMBrief
@@ -74,9 +49,7 @@ def test_write_live_mode_uses_only_generated_content(monkeypatch) -> None:
 
     monkeypatch.setattr(llm_client, "generate_structured", fake_generate_structured)
 
-    settings = DemoSettings(
-        ai=WriterAISettings(ai_mode=AIMode.LIVE, gateway_api_key="test-key")
-    )
+    settings = DemoSettings(ai=WriterAISettings(gateway_api_key="test-key"))
     response = TestClient(create_app(settings)).post("/write", json=request_payload())
 
     assert response.status_code == 200

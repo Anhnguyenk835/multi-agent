@@ -6,7 +6,7 @@ import pytest
 from pydantic import BaseModel, ConfigDict, Field
 from writer.errors import InvalidOutputError, ProviderConfigurationError, ProviderUnavailableError
 from writer.llm_client import generate_structured
-from writer.settings import AIMode, WriterAISettings
+from writer.settings import WriterAISettings
 
 
 class _Answer(BaseModel):
@@ -17,7 +17,6 @@ class _Answer(BaseModel):
 
 def _live_settings(**overrides: object) -> WriterAISettings:
     defaults: dict[str, object] = {
-        "ai_mode": AIMode.LIVE,
         "gateway_api_key": "gateway-test-key",
         "llm_timeout_seconds": 1.0,
     }

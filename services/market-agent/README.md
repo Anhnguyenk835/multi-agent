@@ -1,7 +1,6 @@
 # Market Agent
 
-Google ADK agent served over gRPC. `AI_MODE` switches between a
-deterministic fixture and a real ReAct search agent behind the same
+Google ADK ReAct search agent served over gRPC behind the
 `MarketRequest`/`MarketResponse` contract.
 
 ## Architecture
@@ -15,7 +14,6 @@ flowchart TD
     G --> O([MarketResponse])
 ```
 
-- `AI_MODE=fixture` (default): two hardcoded signals, no API keys.
 - `search` calls Exa directly — no shared code with Researcher; the tool
   self-enforces the 3-call budget (ADK has no built-in limiter).
 - Signals cite a string tag (`function_call_id#position`); an unknown tag
@@ -30,16 +28,16 @@ flowchart TD
 | --- | --- |
 | `agent.py` | `LlmAgent` construction + event extraction/grounding |
 | `tools.py` | `search` tool + tag bookkeeping + call budget |
-| `runner.py` | Fixture/live branch |
+| `runner.py` | ADK run orchestration |
 | `server.py` | gRPC servicer + health service |
 
 ## Configuration
 
-`services/market-agent/.env` (own copy, not shared): `AI_MODE`,
-`LLM_GATEWAY_BASE_URL`, `LLM_GATEWAY_API_KEY`, `LLM_MODEL_ROUTE`,
-`EXA_API_KEY`, `EXA_MAX_RESULTS`, `EXA_CONTENT_MAX_CHARACTERS`,
-`LLM_TIMEOUT_SECONDS`, `LLM_MAX_OUTPUT_TOKENS`. Provider credentials remain
-only in the LiteLLM gateway.
+`services/market-agent/.env` (own copy, not shared): `LLM_GATEWAY_BASE_URL`,
+`LLM_GATEWAY_API_KEY`, `LLM_MODEL_ROUTE`, `EXA_API_KEY`, `EXA_MAX_RESULTS`,
+`EXA_CONTENT_MAX_CHARACTERS`, `LLM_TIMEOUT_SECONDS`,
+`LLM_MAX_OUTPUT_TOKENS`. Provider credentials remain only in the LiteLLM
+gateway.
 
 ## Run
 

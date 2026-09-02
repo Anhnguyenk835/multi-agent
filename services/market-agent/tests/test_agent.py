@@ -13,9 +13,8 @@ from market_agent.tools import ExaSourceResult
 
 
 def test_model_route_is_canonicalized_from_environment(monkeypatch) -> None:
-    from market_agent.settings import AIMode, MarketAISettings
+    from market_agent.settings import MarketAISettings
 
-    monkeypatch.setenv("AI_MODE", AIMode.LIVE.value)
     monkeypatch.setenv("LLM_GATEWAY_API_KEY", "test-gateway-key")
     monkeypatch.setenv("LLM_MODEL_ROUTE", "MARKET\u2011STANDARD")
 

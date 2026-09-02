@@ -1,9 +1,8 @@
 # Researcher
 
 LangGraph research agent, served as a `RemoteGraph` (`langgraph dev`) that
-the Orchestrator calls directly. `AI_MODE` switches between a deterministic
-fixture and a real ReAct search agent behind the same
-`ResearcherInput`/`ResearcherOutput` contract.
+the Orchestrator calls directly. The service always runs the live ReAct search
+agent behind the `ResearcherInput`/`ResearcherOutput` contract.
 
 ## Architecture
 
@@ -31,7 +30,6 @@ flowchart TD
 7. Researcher returns a schema-validated `ResearcherOutput`; unknown tags fail.
 ```
 
-- `AI_MODE=fixture` (default): two hardcoded findings, no API keys.
 - `search` calls Exa directly — no shared code with Market Agent.
 - Findings cite a string tag (`tool_call_id#position`); an unknown tag fails
   the run. The service builds every `Source` itself, never trusting model text.
@@ -43,16 +41,16 @@ flowchart TD
 
 | File | Responsibility |
 | --- | --- |
-| `graph.py` | Fixture/live graphs |
+| `graph.py` | LangGraph ReAct graph |
 | `tools.py` | `search` tool + tag bookkeeping |
 | `llm_schema.py` / `prompts.py` | Model-facing schema and prompt |
 
 ## Configuration
 
-`services/researcher/.env` (own copy, not shared): `AI_MODE`,
-`LLM_GATEWAY_BASE_URL`, `LLM_GATEWAY_API_KEY`, `LLM_MODEL_ROUTE`,
-`EXA_API_KEY`, `EXA_MAX_RESULTS`, `EXA_CONTENT_MAX_CHARACTERS`,
-`LLM_TIMEOUT_SECONDS`, `LLM_MAX_OUTPUT_TOKENS`.
+`services/researcher/.env` (own copy, not shared): `LLM_GATEWAY_BASE_URL`,
+`LLM_GATEWAY_API_KEY`, `LLM_MODEL_ROUTE`, `EXA_API_KEY`, `EXA_MAX_RESULTS`,
+`EXA_CONTENT_MAX_CHARACTERS`, `LLM_TIMEOUT_SECONDS`,
+`LLM_MAX_OUTPUT_TOKENS`.
 
 ## Run
 

@@ -72,8 +72,6 @@ services:
     env_file:
       - services/researcher/.env
     environment:
-      DEMO_FAILURE_DELAY_MS: ${RESEARCHER_FAILURE_DELAY_MS:-250}
-      DEMO_FAILURE_MODE: ${RESEARCHER_FAILURE_MODE:-none}
       LLM_GATEWAY_BASE_URL: http://litellm:4000/v1
     depends_on:
       litellm:

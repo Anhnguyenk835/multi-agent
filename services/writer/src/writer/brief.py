@@ -12,23 +12,6 @@ from writer.prompts import SYSTEM_PROMPT, build_user_prompt
 from writer.settings import WriterAISettings
 
 
-def write_brief_fixture(request: WriterRequest) -> WriterResponse:
-    subject = request.query.strip().rstrip(".?")
-    lines = [f"# Executive brief: {subject}", "", request.analysis]
-    if request.warnings:
-        lines.append("")
-        lines.append("## Warnings")
-        lines.extend(f"- {warning}" for warning in request.warnings)
-
-    return WriterResponse(
-        **copy_request_metadata(request),
-        status=ContractStatus.SUCCESS,
-        warnings=request.warnings,
-        content="\n".join(lines),
-        citations=request.citations,
-    )
-
-
 async def write_brief_live(request: WriterRequest, settings: WriterAISettings) -> WriterResponse:
     result = await llm_client.generate_structured(
         schema=LLMBrief,
@@ -44,13 +27,6 @@ async def write_brief_live(request: WriterRequest, settings: WriterAISettings) -
         content=content,
         citations=request.citations,
     )
-
-
-async def stream_brief_fixture(request: WriterRequest):
-    response = write_brief_fixture(request)
-    for text in _display_chunks(response.content):
-        yield {"type": "writer.delta", "data": {"text": text}}
-    yield {"type": "writer.completed", "data": {"response": response.model_dump(mode="json")}}
 
 
 async def stream_brief_live(request: WriterRequest, settings: WriterAISettings):

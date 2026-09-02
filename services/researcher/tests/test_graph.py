@@ -8,41 +8,10 @@ from langchain_core.outputs import ChatGeneration, ChatResult
 from researcher.errors import GroundingError, ToolCallLimitReachedError
 from researcher.graph import build_graph, build_graph_for_settings
 from researcher.settings import (
-    AIMode,
     DemoSettings,
-    FailureMode,
     ResearcherAISettings,
     ResearcherExaSettings,
 )
-
-
-@pytest.mark.anyio
-async def test_researcher_returns_deterministic_contract() -> None:
-    request = ResearcherInput(
-        request_id=uuid4(),
-        trace_id="researcher-test-trace",
-        query="AI coding agents",
-    )
-
-    result = await build_graph_for_settings(DemoSettings()).ainvoke(request.model_dump(mode="json"))
-    response = ResearcherOutput.model_validate(result)
-
-    assert response.status is ContractStatus.SUCCESS
-    assert response.request_id == request.request_id
-    assert len(response.findings) == 2
-
-
-@pytest.mark.anyio
-async def test_researcher_transient_failure_is_reproducible() -> None:
-    request = ResearcherInput(
-        request_id=uuid4(),
-        trace_id="researcher-failure-trace",
-        query="AI coding agents",
-    )
-    graph = build_graph_for_settings(DemoSettings(failure_mode=FailureMode.TRANSIENT_ERROR))
-
-    with pytest.raises(RuntimeError, match="simulated transient"):
-        await graph.ainvoke(request.model_dump(mode="json"))
 
 
 class _FakeToolCallingModel(BaseChatModel):
@@ -67,7 +36,7 @@ class _FakeToolCallingModel(BaseChatModel):
 
 def _live_demo_settings() -> DemoSettings:
     return DemoSettings(
-        ai=ResearcherAISettings(ai_mode=AIMode.LIVE, gateway_api_key="test-key"),
+        ai=ResearcherAISettings(gateway_api_key="test-key"),
         exa=ResearcherExaSettings(exa_api_key="test-exa-key"),
     )
 
@@ -88,7 +57,7 @@ def _final_findings_call(call_id: str, findings: list[dict[str, str]]) -> AIMess
 
 
 @pytest.mark.anyio
-async def test_researcher_live_mode_grounds_findings_in_tool_results(monkeypatch) -> None:
+async def test_researcher_grounds_findings_in_tool_results(monkeypatch) -> None:
     import researcher.tools as tools_module
 
     class _FakeExaClient:
@@ -139,7 +108,7 @@ async def test_researcher_live_mode_grounds_findings_in_tool_results(monkeypatch
 
 
 @pytest.mark.anyio
-async def test_researcher_live_mode_rejects_unknown_source_tag(monkeypatch) -> None:
+async def test_researcher_rejects_unknown_source_tag(monkeypatch) -> None:
     import researcher.tools as tools_module
 
     class _FakeExaClient:
@@ -177,7 +146,7 @@ async def test_researcher_live_mode_rejects_unknown_source_tag(monkeypatch) -> N
 
 
 @pytest.mark.anyio
-async def test_researcher_live_mode_raises_when_search_tool_call_limit_reached(monkeypatch) -> None:
+async def test_researcher_raises_when_search_tool_call_limit_reached(monkeypatch) -> None:
     """Regression test: a 4th `search` call exceeds ToolCallLimitMiddleware's
     run_limit=3, which injects a plain-text (non-JSON) ToolMessage and jumps
     straight to END without a structured response. Both must be handled
@@ -219,7 +188,43 @@ async def test_researcher_live_mode_raises_when_search_tool_call_limit_reached(m
 
 @pytest.mark.anyio
 async def test_researcher_graph_factory_accepts_langgraph_server_config(monkeypatch) -> None:
-    monkeypatch.setenv("AI_MODE", AIMode.FIXTURE.value)
+    monkeypatch.setenv("LLM_GATEWAY_API_KEY", "test-key")
+
+    fake_model = _FakeToolCallingModel(
+        messages=[
+            _search_tool_call("call-1", "AI coding agents"),
+            _final_findings_call(
+                "call-2",
+                [
+                    {
+                        "title": "Adoption",
+                        "claim": "Teams adopt AI coding agents.",
+                        "source_tag": "call-1#0",
+                    }
+                ],
+            ),
+        ]
+    )
+    monkeypatch.setattr("researcher.graph._build_chat_model", lambda settings: fake_model)
+
+    import researcher.tools as tools_module
+
+    class _FakeExaClient:
+        async def search(self, query, **kwargs):
+            from types import SimpleNamespace
+
+            return SimpleNamespace(
+                results=[
+                    SimpleNamespace(
+                        url="https://example.com/live",
+                        title="Live source",
+                        published_date=None,
+                        text="Teams are adopting AI coding agents rapidly.",
+                    )
+                ]
+            )
+
+    monkeypatch.setattr(tools_module, "_default_client_factory", lambda settings: _FakeExaClient())
     request = ResearcherInput(
         request_id=uuid4(),
         trace_id="server-config-trace",

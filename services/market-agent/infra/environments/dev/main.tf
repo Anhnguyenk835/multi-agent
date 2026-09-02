@@ -50,7 +50,6 @@ module "cloud_run" {
   startup_probe_path = null
 
   env_vars = {
-    AI_MODE                    = "live"
     LLM_GATEWAY_BASE_URL       = var.llm_gateway_base_url
     LLM_MODEL_ROUTE            = "market-standard"
     LLM_TIMEOUT_SECONDS        = "60"

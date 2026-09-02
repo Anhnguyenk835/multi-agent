@@ -6,13 +6,13 @@ from google.adk.runners import Runner
 from google.adk.sessions import InMemorySessionService
 from google.genai import types
 
-from market_agent.agent import DeterministicMarketAgent, build_live_agent, extract_market_output
+from market_agent.agent import build_live_agent, extract_market_output
 from market_agent.errors import (
     InvalidOutputError,
     ProviderConfigurationError,
     ProviderUnavailableError,
 )
-from market_agent.settings import AIMode, DemoSettings
+from market_agent.settings import DemoSettings
 
 _NO_RETRY = (
     openai.AuthenticationError,
@@ -51,28 +51,20 @@ class MarketAgentRunner:
 
     async def analyze(self, query: str, request_id: str) -> MarketResult:
         settings = self._settings
-        if settings.ai.ai_mode is not AIMode.LIVE:
-            events = await _run_agent(
-                DeterministicMarketAgent(name="market_researcher"), query, request_id
-            )
-            output = next(
-                (event.output for event in events if isinstance(event.output, dict)), None
-            )
-        else:
+        try:
             agent = build_live_agent(
                 "market_researcher",
                 settings.ai,
                 settings.exa,
             )
-            try:
-                events = await _run_agent(agent, query, request_id)
-            except _NO_RETRY as error:
-                raise ProviderConfigurationError(
-                    "LLM gateway rejected the market agent request"
-                ) from error
-            except Exception as error:
-                raise ProviderUnavailableError("LLM gateway is unavailable") from error
-            output = extract_market_output(events)
+            events = await _run_agent(agent, query, request_id)
+        except _NO_RETRY as error:
+            raise ProviderConfigurationError(
+                "LLM gateway rejected the market agent request"
+            ) from error
+        except Exception as error:
+            raise ProviderUnavailableError("LLM gateway is unavailable") from error
+        output = extract_market_output(events)
 
         if output is None:
             raise InvalidOutputError("market agent completed without an output event")

@@ -9,9 +9,9 @@ from distributed_agent_contracts import (
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 
-from analyst.analysis import analyze_fixture, analyze_live
+from analyst.analysis import analyze_live
 from analyst.errors import InvalidOutputError, ProviderConfigurationError, ProviderUnavailableError
-from analyst.settings import AIMode, DemoSettings, FailureMode
+from analyst.settings import DemoSettings, FailureMode
 
 
 def create_app(settings: DemoSettings | None = None) -> FastAPI:
@@ -44,11 +44,7 @@ def create_app(settings: DemoSettings | None = None) -> FastAPI:
             if runtime_settings.failure_mode is FailureMode.INVALID_RESPONSE:
                 return _respond({"status": "invalid"}, 200)
 
-            return (
-                analyze_fixture(request)
-                if runtime_settings.ai.ai_mode is AIMode.FIXTURE
-                else await analyze_live(request, runtime_settings.ai)
-            )
+            return await analyze_live(request, runtime_settings.ai)
         except ProviderConfigurationError:
             failure = _failure_response(
                 request,

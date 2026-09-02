@@ -11,8 +11,7 @@ flowchart LR
     G --> OUT([AnalysisResponse<br/>content + citations])
 ```
 
-- `AI_MODE=fixture` (default): plain markdown synthesis, no API keys.
-- `AI_MODE=live`: its own `analyst.llm_client.generate_structured`, prompted
+- Uses its own `analyst.llm_client.generate_structured`, prompted
   only from the request's own validated fields — including each source's
   full page text (`Source.content`), not just Researcher/Market's one-line
   claim/observation. The prompt asks for a thorough, uncapped markdown
@@ -28,7 +27,7 @@ flowchart LR
 
 ## Configuration
 
-`services/analyst/.env` (own copy): `AI_MODE`, `LLM_GATEWAY_BASE_URL`,
+`services/analyst/.env` (own copy): `LLM_GATEWAY_BASE_URL`,
 `LLM_GATEWAY_API_KEY`, `LLM_MODEL_ROUTE`, `LLM_TIMEOUT_SECONDS`, and
 `LLM_MAX_OUTPUT_TOKENS`. No `EXA_*` or provider credential.
 

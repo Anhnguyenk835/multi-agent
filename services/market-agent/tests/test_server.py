@@ -6,7 +6,7 @@ from distributed_agent_contracts.market.v1 import market_pb2, market_pb2_grpc
 from google.adk.events import Event
 from google.genai import types
 from market_agent.server import create_server
-from market_agent.settings import AIMode, DemoSettings, FailureMode, MarketAISettings
+from market_agent.settings import DemoSettings, FailureMode, MarketAISettings
 
 
 @pytest.fixture
@@ -24,22 +24,6 @@ def valid_request() -> market_pb2.MarketRequest:
         ),
         query="AI coding assistants",
     )
-
-
-@pytest.mark.anyio
-async def test_analyze_market_over_grpc() -> None:
-    server, port = await create_server("127.0.0.1:0", DemoSettings())
-    await server.start()
-    try:
-        async with grpc.aio.insecure_channel(f"127.0.0.1:{port}") as channel:
-            response = await market_pb2_grpc.MarketAgentStub(channel).AnalyzeMarket(valid_request())
-    finally:
-        await server.stop(grace=None)
-
-    assert response.status == market_pb2.RESPONSE_STATUS_SUCCESS
-    assert response.metadata.trace_id == "trace-phase-2"
-    assert len(response.market_signals) == 2
-    assert response.competitors
 
 
 @pytest.mark.anyio
@@ -61,7 +45,7 @@ def _live_settings() -> DemoSettings:
     from market_agent.settings import MarketExaSettings
 
     return DemoSettings(
-        ai=MarketAISettings(ai_mode=AIMode.LIVE, gateway_api_key="test-key"),
+        ai=MarketAISettings(gateway_api_key="test-key"),
         exa=MarketExaSettings(exa_api_key="test-exa-key"),
     )
 
@@ -144,7 +128,7 @@ class _FakeRunner:
 
 
 @pytest.mark.anyio
-async def test_analyze_market_live_mode_grounds_signals_in_tool_results(monkeypatch) -> None:
+async def test_analyze_market_grounds_signals_in_tool_results(monkeypatch) -> None:
     import market_agent.runner as runner_module
 
     monkeypatch.setattr(runner_module, "Runner", _FakeRunner)
