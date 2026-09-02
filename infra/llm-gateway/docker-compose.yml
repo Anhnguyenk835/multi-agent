@@ -1,7 +1,8 @@
 # Started from the LiteLLM quickstart fetched with:
 #   curl -sSLO https://docs.litellm.ai/docker-compose.yml
 # Project-specific settings below provide a version pin, real credentials from
-# .env, logical-model routes, and a localhost-only diagnostic port.
+# .env, Redis-backed coordination, logical-model routes, and a localhost-only
+# diagnostic port.
 services:
   litellm:
     image: ghcr.io/berriai/litellm-database:v1.98.0
@@ -11,6 +12,10 @@ services:
       - .env
     environment:
       DATABASE_URL: postgresql://litellm:litellm@db:5432/litellm
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      REDIS_SSL: "false"
+      REDIS_SSL_CA_CERTS: ""
       STORE_MODEL_IN_DB: "False"
     command:
       - --config
@@ -27,6 +32,8 @@ services:
       - ./config.yaml:/app/config.yaml:ro
     depends_on:
       db:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:4000/health/liveliness')"]
@@ -49,5 +56,26 @@ services:
     volumes:
       - litellm-postgres-data:/var/lib/postgresql/data
 
+  redis:
+    image: redis:7.4.7-alpine
+    env_file:
+      - .env
+    command:
+      - sh
+      - -ec
+      - >-
+        : "$${REDIS_PASSWORD:?REDIS_PASSWORD must be set}";
+        exec redis-server --requirepass "$${REDIS_PASSWORD}" --dir /data
+        --appendonly yes --appendfsync everysec --save 900 1 --save 300 10
+        --save 60 10000
+    volumes:
+      - litellm-redis-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli --no-auth-warning -a \"$$REDIS_PASSWORD\" ping | grep -q PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
 volumes:
   litellm-postgres-data:
+  litellm-redis-data:
