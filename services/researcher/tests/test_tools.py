@@ -4,6 +4,10 @@ from types import SimpleNamespace
 
 import pytest
 from langchain_core.messages import ToolMessage
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+from researcher import telemetry
 from researcher.settings import ResearcherExaSettings
 from researcher.tools import ExaSourceResult, build_search_tool, parse_tool_message
 
@@ -52,6 +56,38 @@ async def test_search_tool_returns_tagged_results_and_strips_www() -> None:
     assert entry["url"] == "https://www.example.com/article"
     assert entry["publisher"] == "example.com"
     assert entry["content"] == "Teams are adopting AI coding agents."
+
+
+@pytest.mark.anyio
+async def test_search_tool_has_logical_and_external_search_spans(monkeypatch) -> None:
+    exporter = InMemorySpanExporter()
+    provider = TracerProvider()
+    provider.add_span_processor(SimpleSpanProcessor(exporter))
+    monkeypatch.setattr(telemetry, "_tracer", provider.get_tracer("test"))
+    settings = ResearcherExaSettings(exa_api_key="test-key", exa_max_results=2)
+    tool = build_search_tool(
+        settings,
+        client_factory=lambda settings: _FakeExaClient(results=[_exa_result()]),
+    )
+
+    with telemetry.operation_span("researcher.run_react_agent"):
+        await tool.ainvoke(
+            {
+                "args": {"query": "AI coding agents"},
+                "type": "tool_call",
+                "id": "call-1",
+                "name": "search",
+            }
+        )
+
+    spans = {span.name: span for span in exporter.get_finished_spans()}
+    logical = spans["search"]
+    external = spans["tool.search"]
+    assert json.loads(logical.attributes["langfuse.observation.input"]) == {
+        "query": "AI coding agents"
+    }
+    assert json.loads(logical.attributes["langfuse.observation.output"]) == {"result_count": 1}
+    assert external.parent.span_id == logical.context.span_id
 
 
 def test_parse_tool_message_reconstructs_source_results() -> None:

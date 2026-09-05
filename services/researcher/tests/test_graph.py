@@ -1,3 +1,4 @@
+from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import pytest
@@ -6,7 +7,7 @@ from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage, BaseMessage, ToolCall
 from langchain_core.outputs import ChatGeneration, ChatResult
 from researcher.errors import GroundingError, ToolCallLimitReachedError
-from researcher.graph import build_graph, build_graph_for_settings
+from researcher.graph import _model_timeouts, build_graph, build_graph_for_settings
 from researcher.settings import (
     DemoSettings,
     ResearcherAISettings,
@@ -236,3 +237,40 @@ async def test_researcher_graph_factory_accepts_langgraph_server_config(monkeypa
     )
 
     assert ResearcherOutput.model_validate(result).status is ContractStatus.SUCCESS
+
+
+@pytest.mark.anyio
+async def test_expired_deadline_stops_before_model_or_tool_call(monkeypatch) -> None:
+    fake_model = _FakeToolCallingModel(messages=[])
+    monkeypatch.setattr("researcher.graph._build_chat_model", lambda settings: fake_model)
+    request = ResearcherInput(
+        request_id=uuid4(),
+        trace_id="expired-deadline",
+        deadline_at=datetime.now(UTC) - timedelta(seconds=1),
+        query="AI coding agents",
+    )
+
+    result = await build_graph_for_settings(_live_demo_settings()).ainvoke(
+        request.model_dump(mode="json")
+    )
+    response = ResearcherOutput.model_validate(result)
+
+    assert response.status is ContractStatus.FAILED
+    assert response.error is not None
+    assert response.error.code.value == "DEADLINE_EXCEEDED"
+    assert response.error.retryable is True
+    assert fake_model._index == 0
+
+
+def test_model_timeouts_fit_all_gateway_attempts_inside_remaining_budget() -> None:
+    settings = ResearcherAISettings(
+        gateway_api_key="test-key",
+        llm_timeout_seconds=60,
+        gateway_max_provider_attempts=4,
+    )
+
+    gateway_timeout, client_timeout = _model_timeouts(settings, remaining=85)
+
+    assert gateway_timeout == pytest.approx(20.75)
+    assert gateway_timeout * settings.gateway_max_provider_attempts == pytest.approx(83)
+    assert client_timeout == pytest.approx(84)

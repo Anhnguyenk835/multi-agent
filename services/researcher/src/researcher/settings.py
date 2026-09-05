@@ -27,6 +27,8 @@ class ResearcherAISettings:
     gateway_base_url: str = _DEFAULT_GATEWAY_BASE_URL
     model_route: str = _DEFAULT_MODEL_ROUTE
     llm_timeout_seconds: float = 60.0
+    # LiteLLM: primary + one retry, then one fallback + one retry.
+    gateway_max_provider_attempts: int = 4
     llm_max_output_tokens: int = 2_000
 
     @classmethod
@@ -39,6 +41,10 @@ class ResearcherAISettings:
             gateway_base_url=gateway_base_url.rstrip("/"),
             model_route=_model_id_from_environment("LLM_MODEL_ROUTE", _DEFAULT_MODEL_ROUTE),
             llm_timeout_seconds=max(1.0, float(os.getenv("LLM_TIMEOUT_SECONDS", "60"))),
+            gateway_max_provider_attempts=max(
+                1,
+                int(os.getenv("LLM_GATEWAY_MAX_PROVIDER_ATTEMPTS", "4")),
+            ),
             llm_max_output_tokens=max(1, int(os.getenv("LLM_MAX_OUTPUT_TOKENS", "2000"))),
         )
 

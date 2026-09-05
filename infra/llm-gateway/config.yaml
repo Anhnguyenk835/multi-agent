@@ -3,7 +3,7 @@
 model_list:
   - model_name: research-fast
     litellm_params:
-      model: gemini/gemini-2.5-flash
+      model: gemini/gemini-3.6-flash
       api_key: os.environ/GEMINI_API_KEY
 
   - model_name: research-fast-openai-fallback
@@ -38,7 +38,7 @@ model_list:
 
   - model_name: brief-streaming-gemini-fallback
     litellm_params:
-      model: gemini/gemini-2.5-flash
+      model: gemini/gemini-3.6-flash
       api_key: os.environ/GEMINI_API_KEY
 
 general_settings:
@@ -55,11 +55,12 @@ general_settings:
     password: os.environ/REDIS_PASSWORD
     ssl: os.environ/REDIS_SSL
 
-# A route receives at most one retry before one approved fallback route. SDK
-# retries are disabled in every agent so this is the only retry policy.
+# A route can make at most four provider attempts: primary + retry, followed
+# by fallback + retry. Deadline-aware services divide their remaining request
+# budget by this count so the gateway finishes before the caller deadline.
 router_settings:
   routing_strategy: simple-shuffle
-  timeout: 10
+  timeout: 60
   num_retries: 1
   max_fallbacks: 1
   retry_after: 1

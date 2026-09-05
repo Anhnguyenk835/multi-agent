@@ -1,5 +1,10 @@
+import asyncio
+from datetime import UTC, datetime
+
 from distributed_agent_contracts import (
+    ContractError,
     ContractStatus,
+    ErrorCode,
     Finding,
     ResearcherInput,
     ResearcherOutput,
@@ -8,7 +13,7 @@ from distributed_agent_contracts import (
     copy_request_metadata,
 )
 from langchain.agents import create_agent
-from langchain.agents.middleware import ToolCallLimitMiddleware
+from langchain.agents.middleware import ToolCallLimitMiddleware, wrap_model_call
 from langchain.agents.structured_output import ToolStrategy
 from langchain_core.messages import ToolMessage
 from langchain_core.runnables import RunnableConfig
@@ -19,24 +24,65 @@ from researcher.errors import GroundingError, ProviderConfigurationError, ToolCa
 from researcher.llm_schema import LLMFindingsResponse
 from researcher.prompts import SYSTEM_PROMPT
 from researcher.settings import DemoSettings, ResearcherAISettings
-from researcher.telemetry import extracted_request_context, operation_span
+from researcher.telemetry import ReactAgentTelemetry, extracted_request_context, operation_span
 from researcher.tools import build_search_tool, parse_tool_message
 
 
-def _build_chat_model(settings: ResearcherAISettings) -> ChatOpenAI:
+def _build_chat_model(
+    settings: ResearcherAISettings,
+    *,
+    timeout_seconds: float | None = None,
+    gateway_timeout_seconds: float | None = None,
+) -> ChatOpenAI:
     if not settings.gateway_api_key:
         raise ProviderConfigurationError("LLM_GATEWAY_API_KEY is required")
 
+    timeout = timeout_seconds or settings.llm_timeout_seconds
     return ChatOpenAI(
         model=settings.model_route,
         api_key=settings.gateway_api_key,
         base_url=settings.gateway_base_url,
-        timeout=settings.llm_timeout_seconds,
+        timeout=timeout,
         max_completion_tokens=settings.llm_max_output_tokens,
         # LiteLLM owns retry and fallback policy. Retrying here would multiply
         # provider attempts and bypass the route's bounded failure budget.
         max_retries=0,
+        extra_body=(
+            {"request_timeout": gateway_timeout_seconds}
+            if gateway_timeout_seconds is not None
+            else None
+        ),
     )
+
+
+def _deadline_middleware(settings: ResearcherAISettings, deadline_at: datetime | None):
+    @wrap_model_call
+    async def apply_deadline(request, handler):
+        remaining = _remaining_seconds(deadline_at)
+        if remaining is None:
+            return await handler(request)
+
+        gateway_timeout, client_timeout = _model_timeouts(settings, remaining)
+        if gateway_timeout <= 0 or client_timeout <= 0:
+            raise TimeoutError("researcher deadline reached before model call")
+        model = _build_chat_model(
+            settings,
+            timeout_seconds=client_timeout,
+            gateway_timeout_seconds=gateway_timeout,
+        )
+        return await handler(request.override(model=model))
+
+    return apply_deadline
+
+
+def _model_timeouts(
+    settings: ResearcherAISettings,
+    remaining: float,
+) -> tuple[float, float]:
+    # LiteLLM's request_timeout is per provider attempt. Divide the shared
+    # budget so primary/retry/fallback all finish before the graph deadline.
+    provider_budget = (remaining - 2.0) / settings.gateway_max_provider_attempts
+    return min(settings.llm_timeout_seconds, provider_budget), remaining - 1.0
 
 
 _RESEARCHER_INPUT_FIELDS = set(ResearcherInput.model_fields)
@@ -58,26 +104,52 @@ def _build_graph(runtime_settings: DemoSettings):
         request = _extract_request(state)
         configurable = config.get("configurable", {})
         carrier = configurable.get("otel_headers", {})
-        with extracted_request_context(request, carrier), operation_span(
-            "researcher.run_react_agent",
-            observation_type="agent",
-            attributes={"app.agent": "researcher", "app.attempt": request.attempt},
+        with (
+            extracted_request_context(request, carrier),
+            operation_span(
+                "researcher.run_react_agent",
+                observation_type="agent",
+                attributes={"app.agent": "researcher", "app.attempt": request.attempt},
+            ),
         ):
-            search_tool = build_search_tool(runtime_settings.exa)
+            remaining = _remaining_seconds(request.deadline_at)
+            if remaining is not None and remaining <= 0:
+                return _deadline_response(request)
+
+            turn_telemetry = ReactAgentTelemetry(
+                ai_settings.model_route,
+                tool_names={"search"},
+            )
+            search_tool = build_search_tool(
+                runtime_settings.exa,
+                deadline_at=request.deadline_at,
+                telemetry=turn_telemetry,
+            )
             agent = create_agent(
                 model=_build_chat_model(ai_settings),
                 tools=[search_tool],
                 system_prompt=SYSTEM_PROMPT,
                 response_format=ToolStrategy(LLMFindingsResponse),
                 middleware=[
-                    ToolCallLimitMiddleware(
-                        tool_name="search", run_limit=3, exit_behavior="end"
-                    ),
+                    turn_telemetry.middleware(),
+                    _deadline_middleware(ai_settings, request.deadline_at),
+                    ToolCallLimitMiddleware(tool_name="search", run_limit=3, exit_behavior="end"),
                 ],
             )
-            final_state = await agent.ainvoke(
-                {"messages": [{"role": "user", "content": request.query}]},
-            )
+            try:
+                if remaining is None:
+                    final_state = await agent.ainvoke(
+                        {"messages": [{"role": "user", "content": request.query}]},
+                    )
+                else:
+                    async with asyncio.timeout(remaining):
+                        final_state = await agent.ainvoke(
+                            {"messages": [{"role": "user", "content": request.query}]},
+                        )
+            except TimeoutError:
+                return _deadline_response(request)
+            finally:
+                turn_telemetry.close()
 
         sources_by_tag = {}
         for message in final_state["messages"]:
@@ -138,6 +210,25 @@ def _build_graph(runtime_settings: DemoSettings):
     builder.add_edge(START, "run_react_agent")
     builder.add_edge("run_react_agent", END)
     return builder.compile()
+
+
+def _remaining_seconds(deadline_at: datetime | None) -> float | None:
+    if deadline_at is None:
+        return None
+    normalized = deadline_at.replace(tzinfo=UTC) if deadline_at.tzinfo is None else deadline_at
+    return (normalized - datetime.now(UTC)).total_seconds()
+
+
+def _deadline_response(request: ResearcherInput) -> dict[str, object]:
+    return ResearcherOutput(
+        **copy_request_metadata(request),
+        status=ContractStatus.FAILED,
+        error=ContractError(
+            code=ErrorCode.DEADLINE_EXCEEDED,
+            message="Researcher deadline exceeded",
+            retryable=True,
+        ),
+    ).model_dump(mode="json")
 
 
 def build_graph(config: RunnableConfig):

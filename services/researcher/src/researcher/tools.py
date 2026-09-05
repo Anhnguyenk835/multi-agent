@@ -1,5 +1,7 @@
+import asyncio
 import json
 from collections.abc import Callable
+from contextlib import nullcontext
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Annotated
@@ -12,7 +14,7 @@ from langgraph.config import get_stream_writer
 
 from researcher.errors import ProviderConfigurationError
 from researcher.settings import ResearcherExaSettings
-from researcher.telemetry import operation_span
+from researcher.telemetry import ReactAgentTelemetry, _json_attribute, operation_span
 
 
 @dataclass(frozen=True, slots=True)
@@ -57,6 +59,8 @@ def build_search_tool(
     settings: ResearcherExaSettings,
     *,
     client_factory: Callable[[ResearcherExaSettings], AsyncExa] | None = None,
+    deadline_at: datetime | None = None,
+    telemetry: ReactAgentTelemetry | None = None,
 ):
     """Build a fresh `search` tool bound to `settings`.
 
@@ -76,38 +80,75 @@ def build_search_tool(
             "research.search.started",
             {"query_preview": " ".join(query.split())[:160]},
         )
-        with operation_span(
-            "tool.search",
-            observation_type="tool",
-            attributes={
-                "app.agent": "researcher",
-                "app.tool.name": "search",
-                "app.tool.requested_results": settings.exa_max_results,
-            },
-        ):
-            response = await client.search(
-                query,
-                num_results=settings.exa_max_results,
-                contents={"text": {"maxCharacters": settings.exa_content_max_characters}},
-            )
+        turn_context = telemetry.tool_context(tool_call_id) if telemetry else nullcontext()
+        with turn_context:
+            with operation_span(
+                "search",
+                attributes={
+                    "app.agent": "researcher",
+                    "app.tool.name": "search",
+                    "langfuse.observation.input": _json_attribute({"query": query}),
+                },
+            ) as search_span:
+                with operation_span(
+                    "tool.search",
+                    observation_type="tool",
+                    attributes={
+                        "app.agent": "researcher",
+                        "app.tool.name": "search",
+                        "app.tool.requested_results": settings.exa_max_results,
+                    },
+                ):
+                    if deadline_at is None:
+                        response = await client.search(
+                            query,
+                            num_results=settings.exa_max_results,
+                            contents={
+                                "text": {"maxCharacters": settings.exa_content_max_characters}
+                            },
+                        )
+                    else:
+                        normalized = (
+                            deadline_at.replace(tzinfo=UTC)
+                            if deadline_at.tzinfo is None
+                            else deadline_at
+                        )
+                        remaining = (normalized - datetime.now(UTC)).total_seconds() - 1.0
+                        if remaining <= 0:
+                            raise TimeoutError("researcher deadline reached before search")
+                        async with asyncio.timeout(remaining):
+                            response = await client.search(
+                                query,
+                                num_results=settings.exa_max_results,
+                                contents={
+                                    "text": {"maxCharacters": settings.exa_content_max_characters}
+                                },
+                            )
 
-        retrieved_at = datetime.now(UTC).isoformat()
-        results: list[dict[str, object]] = []
-        for position, result in enumerate(response.results[: settings.exa_max_results]):
-            content = result.text or ""
-            if not content:
-                continue
-            results.append(
-                {
-                    "tag": f"{tool_call_id}#{position}",
-                    "title": result.title or result.url,
-                    "url": result.url,
-                    "publisher": _publisher_from_url(result.url),
-                    "published_at": result.published_date,
-                    "retrieved_at": retrieved_at,
-                    "content": content,
-                }
-            )
+                retrieved_at = datetime.now(UTC).isoformat()
+                results: list[dict[str, object]] = []
+                for position, result in enumerate(response.results[: settings.exa_max_results]):
+                    content = result.text or ""
+                    if not content:
+                        continue
+                    results.append(
+                        {
+                            "tag": f"{tool_call_id}#{position}",
+                            "title": result.title or result.url,
+                            "url": result.url,
+                            "publisher": _publisher_from_url(result.url),
+                            "published_at": result.published_date,
+                            "retrieved_at": retrieved_at,
+                            "content": content,
+                        }
+                    )
+                tool_output = {"result_count": len(results)}
+                search_span.set_attribute(
+                    "langfuse.observation.output",
+                    _json_attribute(tool_output),
+                )
+            if telemetry:
+                telemetry.complete_tool(tool_call_id, tool_output)
         _stream_activity("research.search.completed", {"result_count": len(results)})
         return json.dumps({"results": results}, default=str)
 

@@ -44,10 +44,11 @@ Before starting the stack, copy `infra/llm-gateway/.env.example` to
 key. Agent service `.env` files contain only their own LiteLLM virtual key and
 logical route; provider credentials must not be copied into them.
 
-Copy `infra/observability/.env.example` to `infra/observability/.env`, choose
-the endpoint for your Langfuse Cloud region, and set `LANGFUSE_AUTH` to the
-base64 encoding of `public_key:secret_key`. Applications send OTLP only to the
-local Collector; Langfuse credentials are never exposed to service containers.
+Copy `infra/observability/.env.example` to `infra/observability/.env` and set
+`LANGFUSE_SECRET_KEY`, `LANGFUSE_PUBLIC_KEY`, and `LANGFUSE_BASE_URL` to the
+values from the Langfuse project settings. The Collector creates the required
+Basic Auth header. Applications send OTLP only to the local Collector;
+Langfuse credentials are never exposed to service containers.
 Set `OTEL_SDK_DISABLED=true` to run a service without tracing.
 
 The `opentelemetry-instrument` runtime owns SDK bootstrap, OTLP export, and
@@ -56,6 +57,11 @@ business spans, correlation, and exceptional propagation boundaries in its
 local `<service>/telemetry.py` module. There is no shared runtime telemetry
 package. Teams must keep the common attribute contract (`app.*`, `gen_ai.*`,
 and `langfuse.*`) stable; the Collector owns export policy and credentials.
+LiteLLM uses parent-based sampling with root sampling disabled: model, usage,
+cost, and gateway latency spans are retained inside sampled business traces,
+while standalone Admin UI and health-check traces are discarded at source.
+The Collector treats LiteLLM generation spans as the canonical usage and cost
+source, preventing agent-framework spans from double-counting token totals.
 
 Every service has its own `services/<service>/Dockerfile`, so service-specific
 runtime dependencies and startup commands remain isolated. The Orchestrator is

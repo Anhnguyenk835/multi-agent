@@ -2,7 +2,7 @@ import asyncio
 import json
 import logging
 from collections.abc import Awaitable, Callable
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from functools import wraps
 from inspect import iscoroutinefunction
 from time import perf_counter
@@ -26,9 +26,15 @@ from orchestrator.errors import AgentCallError
 from orchestrator.retry import invoke_with_retry
 from orchestrator.state import AgentBranch, WorkflowState
 from orchestrator.streaming import emit_event, safe_source_url, sanitize_query
-from orchestrator.telemetry import operation_span
+from orchestrator.telemetry import (
+    operation_span,
+    set_observation_input,
+    set_observation_output,
+)
 
 logger = logging.getLogger("uvicorn.error")
+
+_UPSTREAM_DEADLINE_GRACE_SECONDS = 5.0
 
 
 def _traced_node(name: str):
@@ -95,8 +101,20 @@ class WorkflowNodes:
                 {"query_preview": sanitize_query(state["query"])},
             )
 
-        async def operation(attempt: int) -> ResearcherOutput:
-            request = ResearcherInput(**_request_fields(state, attempt), query=state["query"])
+        def request_factory(attempt: int) -> ResearcherInput:
+            return ResearcherInput(
+                **_request_fields(
+                    state,
+                    attempt,
+                    deadline_at=_child_deadline_at(
+                        state,
+                        self._settings.researcher_policy.timeout_seconds,
+                    ),
+                ),
+                query=state["query"],
+            )
+
+        async def operation(request: ResearcherInput) -> ResearcherOutput:
             if analyze_stream is not None:
                 return await analyze_stream(
                     request,
@@ -113,6 +131,7 @@ class WorkflowNodes:
             "researcher",
             state,
             self._settings.researcher_policy,
+            request_factory,
             operation,
         )
         if branch.usable:
@@ -150,15 +169,20 @@ class WorkflowNodes:
             "market",
             {"message": "Gathering market signals"},
         )
-        async def operation(attempt: int) -> MarketAgentOutput:
-            return await self._clients.market.analyze(
-                MarketAgentRequest(**_request_fields(state, attempt), query=state["query"])
+        def request_factory(attempt: int) -> MarketAgentRequest:
+            return MarketAgentRequest(
+                **_request_fields(state, attempt),
+                query=state["query"],
             )
+
+        async def operation(request: MarketAgentRequest) -> MarketAgentOutput:
+            return await self._clients.market.analyze(request)
 
         branch = await self._invoke_branch(
             "market",
             state,
             self._settings.market_policy,
+            request_factory,
             operation,
         )
         return {"market_branch": branch.model_dump(mode="json")}
@@ -218,20 +242,23 @@ class WorkflowNodes:
         )
         market_output = MarketAgentOutput.model_validate(market.data) if market.usable else None
 
-        async def operation(attempt: int) -> AnalysisResponse:
-            request = AnalysisRequest(
+        def request_factory(attempt: int) -> AnalysisRequest:
+            return AnalysisRequest(
                 **_request_fields(state, attempt),
                 query=state["query"],
                 research_findings=research_output.findings if research_output else [],
                 market_signals=market_output.market_signals if market_output else [],
                 competitors=market_output.competitors if market_output else [],
             )
+
+        async def operation(request: AnalysisRequest) -> AnalysisResponse:
             return await self._clients.analyst.analyze(request)
 
         branch = await self._invoke_branch(
             "analyst",
             state,
             self._settings.analyst_policy,
+            request_factory,
             operation,
         )
         updates: dict[str, object] = {"analysis_branch": branch.model_dump(mode="json")}
@@ -252,14 +279,16 @@ class WorkflowNodes:
         analysis_branch = AgentBranch.model_validate(state["analysis_branch"])
         analysis = AnalysisResponse.model_validate(analysis_branch.data)
 
-        async def operation(attempt: int) -> WriterResponse:
-            request = WriterRequest(
+        def request_factory(attempt: int) -> WriterRequest:
+            return WriterRequest(
                 **_request_fields(state, attempt),
                 query=state["query"],
                 analysis=analysis.content,
                 citations=analysis.citations,
                 warnings=state.get("warnings", []),
             )
+
+        async def operation(request: WriterRequest) -> WriterResponse:
             write_stream = getattr(self._clients.writer, "write_stream", None)
             if write_stream is not None:
                 return await write_stream(
@@ -272,6 +301,7 @@ class WorkflowNodes:
             "writer",
             state,
             self._settings.writer_policy,
+            request_factory,
             operation,
         )
         updates: dict[str, object] = {"writer_branch": branch.model_dump(mode="json")}
@@ -297,12 +327,14 @@ class WorkflowNodes:
         agent: str,
         state: WorkflowState,
         policy: AgentPolicy,
+        request_factory,
         operation,
     ) -> AgentBranch:
         started_at = perf_counter()
         deadline_at = _deadline_from_state(state)
 
         async def traced_operation(attempt: int):
+            request = request_factory(attempt)
             with operation_span(
                 f"agent.call {agent}",
                 observation_type="agent",
@@ -312,8 +344,21 @@ class WorkflowNodes:
                     "app.request_id": str(state["request_id"]),
                     "app.business_trace_id": state["trace_id"],
                 },
-            ):
-                return await operation(attempt)
+            ) as span:
+                set_observation_input(span, request)
+                try:
+                    response = await operation(request)
+                except AgentCallError as error:
+                    set_observation_output(
+                        span,
+                        {
+                            "status": ContractStatus.FAILED,
+                            "error": error.to_contract_error(),
+                        },
+                    )
+                    raise
+                set_observation_output(span, response)
+                return response
 
         try:
             result = await invoke_with_retry(
@@ -381,19 +426,37 @@ def _branch_status_updates(branch: AgentBranch) -> dict[str, object]:
     return {}
 
 
-def _request_fields(state: WorkflowState, attempt: int) -> dict[str, object]:
+def _request_fields(
+    state: WorkflowState,
+    attempt: int,
+    *,
+    deadline_at: datetime | None = None,
+) -> dict[str, object]:
     return {
         "contract_version": state["contract_version"],
         "request_id": state["request_id"],
         "trace_id": state["trace_id"],
         "attempt": attempt,
-        "deadline_at": state.get("deadline_at"),
+        "deadline_at": deadline_at or state.get("deadline_at"),
     }
 
 
 def _deadline_from_state(state: WorkflowState) -> datetime | None:
     value = state.get("deadline_at")
     return datetime.fromisoformat(value) if value else None
+
+
+def _child_deadline_at(state: WorkflowState, parent_timeout_seconds: float) -> datetime:
+    now = datetime.now(UTC)
+    parent_deadline = now + timedelta(seconds=parent_timeout_seconds)
+    workflow_deadline = _deadline_from_state(state)
+    if workflow_deadline is not None:
+        if workflow_deadline.tzinfo is None:
+            workflow_deadline = workflow_deadline.replace(tzinfo=UTC)
+        parent_deadline = min(parent_deadline, workflow_deadline)
+
+    grace = min(_UPSTREAM_DEADLINE_GRACE_SECONDS, parent_timeout_seconds * 0.1)
+    return max(now, parent_deadline - timedelta(seconds=grace))
 
 
 def _deduplicate(values: list[str]) -> list[str]:

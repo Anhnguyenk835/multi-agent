@@ -16,22 +16,31 @@ processors:
     trace_statements:
       - context: span
         statements:
-          - set(attributes["langfuse.observation.type"], "generation") where attributes["gen_ai.operation.name"] != nil and attributes["langfuse.observation.type"] == nil
+          - set(span.attributes["langfuse.observation.type"], "span") where resource.attributes["service.name"] == "litellm-gateway" and span.attributes["http.route"] != nil
+          - set(span.attributes["langfuse.observation.type"], "span") where resource.attributes["service.name"] != "litellm-gateway" and span.attributes["gen_ai.operation.name"] != nil
+          - set(span.attributes["langfuse.observation.type"], "generation") where resource.attributes["service.name"] == "litellm-gateway" and span.attributes["gen_ai.operation.name"] != nil
+          - set(span.attributes["langfuse.observation.model.name"], span.attributes["litellm.provider.model"]) where resource.attributes["service.name"] == "litellm-gateway" and span.attributes["litellm.provider.model"] != nil
+          - set(span.attributes["gen_ai.usage.cost"], span.attributes["litellm.cost.total"]) where resource.attributes["service.name"] == "litellm-gateway" and span.attributes["litellm.cost.total"] != nil
+          - delete_matching_keys(span.attributes, "^gen_ai\\.usage\\.") where resource.attributes["service.name"] != "litellm-gateway"
   filter/noisy_framework_spans:
     error_mode: ignore
     traces:
       span:
         - attributes["asgi.event.type"] != nil
         - attributes["rpc.service"] == "grpc.health.v1.Health"
+        - attributes["http.request.method"] == "OPTIONS" or attributes["http.method"] == "OPTIONS"
+        - resource.attributes["service.name"] == "litellm-gateway" and attributes["db.system.name"] != nil
+        - resource.attributes["service.name"] == "litellm-gateway" and IsMatch(name, "^auth /")
   batch:
     send_batch_size: 512
     timeout: 2s
 
 exporters:
   otlphttp/langfuse:
-    endpoint: ${env:LANGFUSE_OTEL_ENDPOINT:-https://cloud.langfuse.com/api/public/otel}
+    endpoint: ${env:LANGFUSE_BASE_URL:-https://cloud.langfuse.com}/api/public/otel
+    auth:
+      authenticator: basicauth/langfuse
     headers:
-      Authorization: Basic ${env:LANGFUSE_AUTH}
       x-langfuse-ingestion-version: "4"
     sending_queue:
       enabled: true
@@ -43,11 +52,15 @@ exporters:
       max_elapsed_time: 300s
 
 extensions:
+  basicauth/langfuse:
+    client_auth:
+      username: ${env:LANGFUSE_PUBLIC_KEY}
+      password: ${env:LANGFUSE_SECRET_KEY}
   health_check:
     endpoint: 0.0.0.0:13133
 
 service:
-  extensions: [health_check]
+  extensions: [basicauth/langfuse, health_check]
   telemetry:
     logs:
       level: info

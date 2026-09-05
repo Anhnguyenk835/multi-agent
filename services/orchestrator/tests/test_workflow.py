@@ -1,4 +1,5 @@
 import asyncio
+import json
 from datetime import UTC, datetime
 from uuid import uuid4
 
@@ -16,6 +17,10 @@ from distributed_agent_contracts import (
     copy_request_metadata,
 )
 from langgraph.checkpoint.memory import InMemorySaver
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+from orchestrator import telemetry
 from orchestrator.clients import OrchestratorClients
 from orchestrator.clients.market import MarketAgentOutput
 from orchestrator.config import AgentPolicy, OrchestratorSettings
@@ -224,6 +229,28 @@ async def test_happy_path_fans_out_concurrently_and_is_idempotent() -> None:
 
 
 @pytest.mark.anyio
+async def test_agent_call_span_records_contract_input_and_output(monkeypatch) -> None:
+    exporter = InMemorySpanExporter()
+    provider = TracerProvider()
+    provider.add_span_processor(SimpleSpanProcessor(exporter))
+    monkeypatch.setattr(telemetry, "_tracer", provider.get_tracer("test"))
+    service, *_ = _service()
+
+    await service.run(_request(query="AI agent market in 2026"))
+
+    market_span = next(
+        span for span in exporter.get_finished_spans() if span.name == "agent.call market"
+    )
+    input_value = json.loads(market_span.attributes["langfuse.observation.input"])
+    output_value = json.loads(market_span.attributes["langfuse.observation.output"])
+    assert input_value["query"] == "AI agent market in 2026"
+    assert input_value["attempt"] == 1
+    assert output_value["status"] == "success"
+    assert output_value["market_signals"]
+    assert "langfuse.trace.input" not in market_span.attributes
+
+
+@pytest.mark.anyio
 async def test_stream_emits_safe_agent_progress_sources_and_terminal_response() -> None:
     service, *_ = _service()
     request = _request(query="Find sk-this-must-not-reach-the-ui sources")
@@ -322,3 +349,8 @@ async def test_retry_attempt_is_propagated_to_agent_contract() -> None:
 
     assert response.status is ContractStatus.SUCCESS
     assert [request.attempt for request in researcher.requests] == [1, 2, 3]
+    assert all(request.deadline_at is not None for request in researcher.requests)
+    assert all(
+        0 < (request.deadline_at - datetime.now(UTC)).total_seconds() <= 1
+        for request in researcher.requests
+    )
