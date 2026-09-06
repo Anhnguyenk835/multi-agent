@@ -60,6 +60,26 @@ async def test_search_tool_returns_tagged_results_and_strips_www() -> None:
 
 
 @pytest.mark.anyio
+async def test_search_tool_preserves_long_provider_tool_call_id() -> None:
+    tool_call_id = f"call_1__thought__{'x' * 2_000}"
+    tool = build_search_tool(
+        ResearcherExaSettings(exa_api_key="test-key"),
+        client_factory=lambda settings: _FakeExaClient(results=[_exa_result()]),
+    )
+
+    result = await tool.ainvoke(
+        {
+            "args": {"query": "AI coding agents"},
+            "type": "tool_call",
+            "id": tool_call_id,
+            "name": "search",
+        }
+    )
+
+    assert json.loads(result.content)["results"][0]["tag"] == f"{tool_call_id}#0"
+
+
+@pytest.mark.anyio
 async def test_search_tool_has_logical_and_external_search_spans(monkeypatch) -> None:
     exporter = InMemorySpanExporter()
     provider = TracerProvider()

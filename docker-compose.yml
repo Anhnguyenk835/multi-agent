@@ -106,6 +106,7 @@ services:
       # primary + retry + fallback + fallback retry in LiteLLM
       LLM_GATEWAY_MAX_PROVIDER_ATTEMPTS: "4"
       LLM_GATEWAY_BASE_URL: http://litellm:4000/v1
+      LLM_MAX_OUTPUT_TOKENS: "8000"
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
       OTEL_EXPORTER_OTLP_INSECURE: "true"
       OTEL_EXPORTER_OTLP_PROTOCOL: grpc

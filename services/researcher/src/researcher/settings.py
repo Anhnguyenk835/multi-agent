@@ -29,7 +29,7 @@ class ResearcherAISettings:
     llm_timeout_seconds: float = 60.0
     # LiteLLM: primary + one retry, then one fallback + one retry.
     gateway_max_provider_attempts: int = 4
-    llm_max_output_tokens: int = 2_000
+    llm_max_output_tokens: int = 8_000
 
     @classmethod
     def from_environment(cls) -> "ResearcherAISettings":
@@ -45,7 +45,7 @@ class ResearcherAISettings:
                 1,
                 int(os.getenv("LLM_GATEWAY_MAX_PROVIDER_ATTEMPTS", "4")),
             ),
-            llm_max_output_tokens=max(1, int(os.getenv("LLM_MAX_OUTPUT_TOKENS", "2000"))),
+            llm_max_output_tokens=max(1, int(os.getenv("LLM_MAX_OUTPUT_TOKENS", "8000"))),
         )
 
 

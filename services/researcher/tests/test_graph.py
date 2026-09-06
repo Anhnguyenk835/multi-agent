@@ -6,8 +6,14 @@ from distributed_agent_contracts import ContractStatus, ResearcherInput, Researc
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage, BaseMessage, ToolCall
 from langchain_core.outputs import ChatGeneration, ChatResult
-from researcher.errors import GroundingError, ToolCallLimitReachedError
-from researcher.graph import _model_timeouts, build_graph, build_graph_for_settings
+from researcher.errors import GroundingError, InvalidOutputError, ToolCallLimitReachedError
+from researcher.graph import (
+    _model_timeouts,
+    _raise_missing_structured_output,
+    build_graph,
+    build_graph_for_settings,
+)
+from researcher.llm_schema import LLMFindingsResponse
 from researcher.settings import (
     DemoSettings,
     ResearcherAISettings,
@@ -53,6 +59,21 @@ def _final_findings_call(call_id: str, findings: list[dict[str, str]]) -> AIMess
         content="",
         tool_calls=[ToolCall(name="LLMFindingsResponse", args={"findings": findings}, id=call_id)],
     )
+
+
+def test_missing_structured_response_is_not_misreported_as_search_limit() -> None:
+    with pytest.raises(InvalidOutputError, match="valid structured findings"):
+        _raise_missing_structured_output([AIMessage(content="truncated output")])
+
+
+def test_structured_response_accepts_long_provider_source_tag() -> None:
+    source_tag = f"call_1__thought__{'x' * 2_000}#0"
+
+    response = LLMFindingsResponse.model_validate(
+        {"findings": [{"title": "Market", "claim": "Grounded claim", "source_tag": source_tag}]}
+    )
+
+    assert response.findings[0].source_tag == source_tag
 
 
 @pytest.mark.anyio

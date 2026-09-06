@@ -10,5 +10,9 @@ class GroundingError(ResearcherError):
     """The model cited a source_tag that does not match any search result."""
 
 
+class InvalidOutputError(ResearcherError):
+    """The model completed without a valid structured response."""
+
+
 class ToolCallLimitReachedError(ResearcherError):
     """The ReAct loop hit its tool-call limit before producing a structured response."""

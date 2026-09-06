@@ -6,7 +6,7 @@ from distributed_agent_contracts import (
     ResearcherInput,
     ResearcherOutput,
 )
-from langgraph.pregel.remote import RemoteGraph
+from langgraph.pregel.remote import RemoteException, RemoteGraph
 from langgraph_sdk.errors import (
     APIConnectionError,
     APIResponseValidationError,
@@ -104,6 +104,8 @@ class ResearcherClient:
 
 def _map_researcher_error(error: Exception, *, streaming: bool) -> AgentCallError:
     suffix = " stream" if streaming else ""
+    if isinstance(error, RemoteException):
+        return _map_remote_graph_error(error)
     if isinstance(error, APITimeoutError):
         return AgentCallError(
             ErrorCode.DEADLINE_EXCEEDED, f"Researcher{suffix} deadline exceeded", retryable=True
@@ -138,6 +140,54 @@ def _map_researcher_error(error: Exception, *, streaming: bool) -> AgentCallErro
         )
     return AgentCallError(
         ErrorCode.INTERNAL_ERROR, f"Unexpected Researcher{suffix} client failure", retryable=False
+    )
+
+
+def _map_remote_graph_error(error: RemoteException) -> AgentCallError:
+    payload = error.args[0] if error.args else None
+    if not isinstance(payload, dict):
+        return AgentCallError(
+            ErrorCode.INTERNAL_ERROR,
+            "Researcher remote graph failed without a structured error",
+            retryable=False,
+        )
+
+    error_type = str(payload.get("error", ""))
+    remote_message = str(payload.get("message", ""))
+    if error_type == "InvalidOutputError":
+        return AgentCallError(
+            ErrorCode.UPSTREAM_INVALID_RESPONSE,
+            f"Researcher model returned invalid structured output: {remote_message}",
+            retryable=False,
+        )
+    if error_type == "ToolCallLimitReachedError":
+        return AgentCallError(
+            ErrorCode.UPSTREAM_INVALID_RESPONSE,
+            f"Researcher search limit reached before final output: {remote_message}",
+            retryable=False,
+        )
+    if error_type == "GroundingError":
+        return AgentCallError(
+            ErrorCode.UPSTREAM_INVALID_RESPONSE,
+            f"Researcher returned ungrounded output: {remote_message}",
+            retryable=False,
+        )
+    if error_type == "TimeoutError":
+        return AgentCallError(
+            ErrorCode.DEADLINE_EXCEEDED,
+            "Researcher remote graph deadline exceeded",
+            retryable=True,
+        )
+    if error_type == "ProviderConfigurationError":
+        return AgentCallError(
+            ErrorCode.INTERNAL_ERROR,
+            "Researcher provider configuration is invalid",
+            retryable=False,
+        )
+    return AgentCallError(
+        ErrorCode.INTERNAL_ERROR,
+        f"Researcher remote graph failed ({error_type or 'unknown error'}): {remote_message}",
+        retryable=False,
     )
 
 

@@ -38,6 +38,14 @@ def test_submit_tool_registered_name_matches_submit_tool_name_constant() -> None
     assert FunctionTool(submit_market_analysis).name == SUBMIT_TOOL_NAME
 
 
+def test_market_schema_accepts_long_provider_source_tag() -> None:
+    source_tag = f"call_1__thought__{'x' * 2_000}#0"
+
+    signal = LLMSignal(topic="Market", observation="Grounded signal", source_tag=source_tag)
+
+    assert signal.source_tag == source_tag
+
+
 @pytest.mark.anyio
 async def test_adk_model_turn_receives_remaining_gateway_budget() -> None:
     calls = []

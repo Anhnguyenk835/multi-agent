@@ -20,7 +20,12 @@ from langchain_core.runnables import RunnableConfig
 from langchain_openai import ChatOpenAI
 from langgraph.graph import END, START, StateGraph
 
-from researcher.errors import GroundingError, ProviderConfigurationError, ToolCallLimitReachedError
+from researcher.errors import (
+    GroundingError,
+    InvalidOutputError,
+    ProviderConfigurationError,
+    ToolCallLimitReachedError,
+)
 from researcher.llm_schema import LLMFindingsResponse
 from researcher.prompts import SYSTEM_PROMPT
 from researcher.search import parse_tool_message
@@ -167,12 +172,7 @@ def _build_graph(runtime_settings: DemoSettings):
 
         structured: LLMFindingsResponse | None = final_state["structured_response"]
         if structured is None:
-            # ToolCallLimitMiddleware(exit_behavior="end") jumps straight to
-            # END once the limit is hit, so the agent never got to call the
-            # final structured-output tool.
-            raise ToolCallLimitReachedError(
-                "search tool call limit reached before the model produced a structured response"
-            )
+            _raise_missing_structured_output(final_state["messages"])
         findings: list[Finding] = []
         for raw_finding in structured.findings:
             matched = sources_by_tag.get(raw_finding.source_tag)
@@ -218,6 +218,18 @@ def _remaining_seconds(deadline_at: datetime | None) -> float | None:
         return None
     normalized = deadline_at.replace(tzinfo=UTC) if deadline_at.tzinfo is None else deadline_at
     return (normalized - datetime.now(UTC)).total_seconds()
+
+
+def _raise_missing_structured_output(messages: list[object]) -> None:
+    search_limit_reached = any(
+        isinstance(message, ToolMessage) and message.name == "search" and message.status == "error"
+        for message in messages
+    )
+    if search_limit_reached:
+        raise ToolCallLimitReachedError(
+            "search tool call limit reached before the model produced a structured response"
+        )
+    raise InvalidOutputError("model completed without a valid structured findings response")
 
 
 def _deadline_response(request: ResearcherInput) -> dict[str, object]:
