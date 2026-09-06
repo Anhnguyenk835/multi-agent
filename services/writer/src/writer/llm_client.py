@@ -1,10 +1,12 @@
 import json
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import datetime
 from functools import lru_cache
 from time import monotonic
 
 import openai
+from distributed_agent_contracts import model_timeout_budget
 from pydantic import BaseModel, ValidationError
 
 from writer.errors import InvalidOutputError, ProviderConfigurationError, ProviderUnavailableError
@@ -74,6 +76,7 @@ async def generate_structured[T: BaseModel](
     system_prompt: str,
     user_prompt: str,
     settings: WriterAISettings,
+    deadline_at: datetime | None = None,
     client_factory: Callable[[WriterAISettings], object] | None = None,
 ) -> T:
     if not settings.gateway_api_key:
@@ -83,6 +86,7 @@ async def generate_structured[T: BaseModel](
 
     client = (client_factory or _default_gateway_client)(settings)
     model = settings.model_route
+    budget = _model_budget(settings, deadline_at)
     with generation_span(model, schema.__name__) as span:
         try:
             response = await client.chat.completions.create(
@@ -90,11 +94,21 @@ async def generate_structured[T: BaseModel](
                 messages=_messages(system_prompt, user_prompt),
                 response_format=_json_schema_response_format(schema),
                 max_tokens=settings.llm_max_output_tokens,
-                timeout=settings.llm_timeout_seconds,
+                timeout=budget.client_seconds,
+                extra_body=(
+                    {"request_timeout": budget.provider_attempt_seconds}
+                    if deadline_at is not None
+                    else None
+                ),
             )
         except _NO_RETRY as exc:
             record_error(span, exc, "rejected")
             raise ProviderConfigurationError(f"LLM gateway rejected the request: {exc}") from exc
+        except openai.APITimeoutError as exc:
+            record_error(span, exc, "deadline_exceeded")
+            if deadline_at is not None:
+                raise TimeoutError("writer deadline reached during model call") from exc
+            raise ProviderUnavailableError(f"LLM gateway is unavailable: {exc}") from exc
         except Exception as exc:
             record_error(span, exc, "unavailable")
             raise ProviderUnavailableError(f"LLM gateway is unavailable: {exc}") from exc
@@ -116,6 +130,7 @@ async def generate_structured_stream[T: BaseModel](
     system_prompt: str,
     user_prompt: str,
     settings: WriterAISettings,
+    deadline_at: datetime | None = None,
     client_factory: Callable[[WriterAISettings], object] | None = None,
 ):
     """Yield provider JSON fragments, then a schema-validated structured result.
@@ -130,6 +145,7 @@ async def generate_structured_stream[T: BaseModel](
 
     client = (client_factory or _default_gateway_client)(settings)
     model = settings.model_route
+    budget = _model_budget(settings, deadline_at)
     started = monotonic()
     parts: list[str] = []
     with generation_span(
@@ -144,7 +160,12 @@ async def generate_structured_stream[T: BaseModel](
                 response_format=_json_schema_response_format(schema),
                 stream=True,
                 max_tokens=settings.llm_max_output_tokens,
-                timeout=settings.llm_timeout_seconds,
+                timeout=budget.client_seconds,
+                extra_body=(
+                    {"request_timeout": budget.provider_attempt_seconds}
+                    if deadline_at is not None
+                    else None
+                ),
             )
             async for chunk in stream:
                 content = chunk.choices[0].delta.content if chunk.choices else None
@@ -159,6 +180,11 @@ async def generate_structured_stream[T: BaseModel](
         except _NO_RETRY as exc:
             record_error(span, exc, "rejected")
             raise ProviderConfigurationError(f"LLM gateway rejected the request: {exc}") from exc
+        except openai.APITimeoutError as exc:
+            record_error(span, exc, "deadline_exceeded")
+            if deadline_at is not None:
+                raise TimeoutError("writer deadline reached during model stream") from exc
+            raise ProviderUnavailableError(f"LLM gateway is unavailable: {exc}") from exc
         except Exception as exc:
             record_error(span, exc, "unavailable")
             raise ProviderUnavailableError(f"LLM gateway is unavailable: {exc}") from exc
@@ -172,3 +198,14 @@ async def generate_structured_stream[T: BaseModel](
         span.set_attribute("app.stream.chunk_count", len(parts))
         span.set_attribute("app.outcome", "success")
     yield StructuredStreamChunk[T](kind="completed", result=_parse(schema, content, model))
+
+
+def _model_budget(settings: WriterAISettings, deadline_at: datetime | None):
+    budget = model_timeout_budget(
+        deadline_at,
+        configured_seconds=settings.llm_timeout_seconds,
+        provider_attempts=settings.gateway_max_provider_attempts,
+    )
+    if budget.provider_attempt_seconds <= 0 or budget.client_seconds <= 0:
+        raise TimeoutError("writer deadline reached before model call")
+    return budget

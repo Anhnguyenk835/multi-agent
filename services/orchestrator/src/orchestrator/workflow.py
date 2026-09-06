@@ -112,7 +112,9 @@ def _event(event_type: str, request: WorkflowRequest) -> dict[str, object]:
 def _terminal_event(response: WorkflowResponse) -> dict[str, object]:
     return {
         "version": "v1",
-        "type": "workflow.completed" if response.status is not ContractStatus.FAILED else "workflow.failed",
+        "type": "workflow.completed"
+        if response.status is not ContractStatus.FAILED
+        else "workflow.failed",
         "request_id": str(response.request_id),
         "trace_id": response.trace_id,
         "data": {"response": response.model_dump(mode="json")},

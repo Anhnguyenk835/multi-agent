@@ -1,3 +1,4 @@
+from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 from fastapi.testclient import TestClient
@@ -14,7 +15,11 @@ def request_payload() -> dict[str, object]:
         "query": "AI coding assistants",
         "analysis": "## Insights\n\n- Teams prioritize measurable productivity. [1]",
         "citations": [
-            {"title": "Fixture", "url": "https://example.com/research", "publisher": "Demo Research"}
+            {
+                "title": "Fixture",
+                "url": "https://example.com/research",
+                "publisher": "Demo Research",
+            }
         ],
         "warnings": ["Fixture data only"],
     }
@@ -35,6 +40,16 @@ def test_transient_failure_is_contract_shaped_and_retryable() -> None:
     assert response.status_code == 503
     assert response.json()["error"]["code"] == "UPSTREAM_UNAVAILABLE"
     assert response.json()["error"]["retryable"] is True
+
+
+def test_expired_deadline_stops_before_writing() -> None:
+    payload = request_payload()
+    payload["deadline_at"] = (datetime.now(UTC) - timedelta(seconds=1)).isoformat()
+
+    response = TestClient(create_app(DemoSettings())).post("/write", json=payload)
+
+    assert response.status_code == 504
+    assert response.json()["error"]["code"] == "DEADLINE_EXCEEDED"
 
 
 def test_write_uses_only_generated_content(monkeypatch) -> None:

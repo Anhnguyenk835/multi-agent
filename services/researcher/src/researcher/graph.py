@@ -23,9 +23,10 @@ from langgraph.graph import END, START, StateGraph
 from researcher.errors import GroundingError, ProviderConfigurationError, ToolCallLimitReachedError
 from researcher.llm_schema import LLMFindingsResponse
 from researcher.prompts import SYSTEM_PROMPT
+from researcher.search import parse_tool_message
 from researcher.settings import DemoSettings, ResearcherAISettings
 from researcher.telemetry import ReactAgentTelemetry, extracted_request_context, operation_span
-from researcher.tools import build_search_tool, parse_tool_message
+from researcher.tools import build_search_tool
 
 
 def _build_chat_model(

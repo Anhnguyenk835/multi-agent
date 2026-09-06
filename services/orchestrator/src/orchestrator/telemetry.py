@@ -51,17 +51,20 @@ def operation_span(
 @contextmanager
 def workflow_span(request: Any) -> Iterator[Span]:
     trace_input = _json_attribute(request)
-    with request_context(request), operation_span(
-        "orchestrator.workflow",
-        observation_type="agent",
-        attributes={
-            "app.attempt": request.attempt,
-            "langfuse.trace.name": "distributed-agent-workflow",
-            "langfuse.trace.input": trace_input,
-            "langfuse.observation.input": trace_input,
-            "langfuse.session.id": str(request.request_id),
-        },
-    ) as span:
+    with (
+        request_context(request),
+        operation_span(
+            "orchestrator.workflow",
+            observation_type="agent",
+            attributes={
+                "app.attempt": request.attempt,
+                "langfuse.trace.name": "distributed-agent-workflow",
+                "langfuse.trace.input": trace_input,
+                "langfuse.observation.input": trace_input,
+                "langfuse.session.id": str(request.request_id),
+            },
+        ) as span,
+    ):
         yield span
 
 

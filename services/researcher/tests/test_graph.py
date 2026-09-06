@@ -51,15 +51,13 @@ def _search_tool_call(call_id: str, query: str) -> AIMessage:
 def _final_findings_call(call_id: str, findings: list[dict[str, str]]) -> AIMessage:
     return AIMessage(
         content="",
-        tool_calls=[
-            ToolCall(name="LLMFindingsResponse", args={"findings": findings}, id=call_id)
-        ],
+        tool_calls=[ToolCall(name="LLMFindingsResponse", args={"findings": findings}, id=call_id)],
     )
 
 
 @pytest.mark.anyio
 async def test_researcher_grounds_findings_in_tool_results(monkeypatch) -> None:
-    import researcher.tools as tools_module
+    import researcher.search as search_module
 
     class _FakeExaClient:
         async def search(self, query, **kwargs):
@@ -76,7 +74,7 @@ async def test_researcher_grounds_findings_in_tool_results(monkeypatch) -> None:
                 ]
             )
 
-    monkeypatch.setattr(tools_module, "_default_client_factory", lambda settings: _FakeExaClient())
+    monkeypatch.setattr(search_module, "default_client_factory", lambda settings: _FakeExaClient())
 
     fake_model = _FakeToolCallingModel(
         messages=[
@@ -110,7 +108,7 @@ async def test_researcher_grounds_findings_in_tool_results(monkeypatch) -> None:
 
 @pytest.mark.anyio
 async def test_researcher_rejects_unknown_source_tag(monkeypatch) -> None:
-    import researcher.tools as tools_module
+    import researcher.search as search_module
 
     class _FakeExaClient:
         async def search(self, query, **kwargs):
@@ -127,7 +125,7 @@ async def test_researcher_rejects_unknown_source_tag(monkeypatch) -> None:
                 ]
             )
 
-    monkeypatch.setattr(tools_module, "_default_client_factory", lambda settings: _FakeExaClient())
+    monkeypatch.setattr(search_module, "default_client_factory", lambda settings: _FakeExaClient())
 
     fake_model = _FakeToolCallingModel(
         messages=[
@@ -143,7 +141,9 @@ async def test_researcher_rejects_unknown_source_tag(monkeypatch) -> None:
     request = ResearcherInput(request_id=uuid4(), trace_id="live-trace-2", query="AI coding agents")
 
     with pytest.raises(GroundingError):
-        await build_graph_for_settings(_live_demo_settings()).ainvoke(request.model_dump(mode="json"))
+        await build_graph_for_settings(_live_demo_settings()).ainvoke(
+            request.model_dump(mode="json")
+        )
 
 
 @pytest.mark.anyio
@@ -152,7 +152,7 @@ async def test_researcher_raises_when_search_tool_call_limit_reached(monkeypatch
     run_limit=3, which injects a plain-text (non-JSON) ToolMessage and jumps
     straight to END without a structured response. Both must be handled
     without crashing on a bare JSONDecodeError / AttributeError."""
-    import researcher.tools as tools_module
+    import researcher.search as search_module
 
     class _FakeExaClient:
         async def search(self, query, **kwargs):
@@ -169,7 +169,7 @@ async def test_researcher_raises_when_search_tool_call_limit_reached(monkeypatch
                 ]
             )
 
-    monkeypatch.setattr(tools_module, "_default_client_factory", lambda settings: _FakeExaClient())
+    monkeypatch.setattr(search_module, "default_client_factory", lambda settings: _FakeExaClient())
 
     fake_model = _FakeToolCallingModel(
         messages=[
@@ -184,7 +184,9 @@ async def test_researcher_raises_when_search_tool_call_limit_reached(monkeypatch
     request = ResearcherInput(request_id=uuid4(), trace_id="limit-trace", query="AI coding agents")
 
     with pytest.raises(ToolCallLimitReachedError):
-        await build_graph_for_settings(_live_demo_settings()).ainvoke(request.model_dump(mode="json"))
+        await build_graph_for_settings(_live_demo_settings()).ainvoke(
+            request.model_dump(mode="json")
+        )
 
 
 @pytest.mark.anyio
@@ -208,7 +210,7 @@ async def test_researcher_graph_factory_accepts_langgraph_server_config(monkeypa
     )
     monkeypatch.setattr("researcher.graph._build_chat_model", lambda settings: fake_model)
 
-    import researcher.tools as tools_module
+    import researcher.search as search_module
 
     class _FakeExaClient:
         async def search(self, query, **kwargs):
@@ -225,7 +227,7 @@ async def test_researcher_graph_factory_accepts_langgraph_server_config(monkeypa
                 ]
             )
 
-    monkeypatch.setattr(tools_module, "_default_client_factory", lambda settings: _FakeExaClient())
+    monkeypatch.setattr(search_module, "default_client_factory", lambda settings: _FakeExaClient())
     request = ResearcherInput(
         request_id=uuid4(),
         trace_id="server-config-trace",

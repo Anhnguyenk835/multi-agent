@@ -1,14 +1,20 @@
+from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
+
+import pytest
 from google.adk.events import Event
 from google.adk.tools import FunctionTool
 from google.genai import types
 from market_agent.agent import (
     SUBMIT_TOOL_NAME,
+    _DeadlineAwareCompletions,
     build_market_output,
     collect_search_sources,
     extract_market_output,
     submit_market_analysis,
 )
 from market_agent.llm_schema import LLMMarketResponse, LLMSignal
+from market_agent.settings import MarketAISettings
 from market_agent.tools import ExaSourceResult
 
 
@@ -30,6 +36,30 @@ def test_submit_tool_registered_name_matches_submit_tool_name_constant() -> None
     two ever drift apart, the model's real tool call is silently never
     recognized as the final answer."""
     assert FunctionTool(submit_market_analysis).name == SUBMIT_TOOL_NAME
+
+
+@pytest.mark.anyio
+async def test_adk_model_turn_receives_remaining_gateway_budget() -> None:
+    calls = []
+
+    async def create(**kwargs):
+        calls.append(kwargs)
+        return SimpleNamespace()
+
+    adapter = _DeadlineAwareCompletions(
+        SimpleNamespace(create=create),
+        MarketAISettings(
+            gateway_api_key="test-key",
+            llm_timeout_seconds=60,
+            gateway_max_provider_attempts=4,
+        ),
+        datetime.now(UTC) + timedelta(seconds=42),
+    )
+
+    await adapter.create(model="market-standard")
+
+    assert 40 < calls[0]["timeout"] <= 41
+    assert 9 < calls[0]["extra_body"]["request_timeout"] <= 10
 
 
 def _function_call_event(name: str, call_id: str, args: dict[str, object]) -> Event:
@@ -104,7 +134,9 @@ def test_build_market_output_grounds_signal_in_matched_source() -> None:
     )
     structured = LLMMarketResponse(
         signals=[
-            LLMSignal(topic="Integration", observation="Buyers want integration.", source_tag="fc-1#0")
+            LLMSignal(
+                topic="Integration", observation="Buyers want integration.", source_tag="fc-1#0"
+            )
         ],
         competitors=["Example Competitor"],
     )

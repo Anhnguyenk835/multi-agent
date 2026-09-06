@@ -1,5 +1,7 @@
 from datetime import datetime
+from typing import Any
 
+from distributed_agent_contracts import model_timeout_budget
 from google.adk.agents import LlmAgent
 from google.adk.events import Event
 from google.adk.labs.openai import OpenAILlm
@@ -38,6 +40,8 @@ def build_live_agent(
     name: str,
     ai_settings: MarketAISettings,
     exa_settings: MarketExaSettings,
+    *,
+    deadline_at: datetime | None = None,
 ) -> LlmAgent:
     """Build an ADK tool-calling agent backed by the LiteLLM gateway.
 
@@ -53,13 +57,19 @@ def build_live_agent(
     if not ai_settings.gateway_api_key:
         raise ProviderConfigurationError("LLM_GATEWAY_API_KEY is required")
 
-    search = build_search_function(exa_settings)
+    search = build_search_function(exa_settings, deadline_at=deadline_at)
     gateway_client = AsyncOpenAI(
         api_key=ai_settings.gateway_api_key,
         base_url=ai_settings.gateway_base_url,
         timeout=ai_settings.llm_timeout_seconds,
         max_retries=0,
     )
+    if deadline_at is not None:
+        gateway_client.chat.completions = _DeadlineAwareCompletions(
+            gateway_client.chat.completions,
+            ai_settings,
+            deadline_at,
+        )
     return LlmAgent(
         name=name,
         model=OpenAILlm(
@@ -70,6 +80,33 @@ def build_live_agent(
         instruction=SYSTEM_PROMPT,
         tools=[FunctionTool(search), FunctionTool(submit_market_analysis)],
     )
+
+
+class _DeadlineAwareCompletions:
+    """Add a fresh remaining-budget calculation to every ADK model turn."""
+
+    def __init__(self, delegate: Any, settings: MarketAISettings, deadline_at: datetime) -> None:
+        self._delegate = delegate
+        self._settings = settings
+        self._deadline_at = deadline_at
+
+    async def create(self, **kwargs: Any):
+        budget = model_timeout_budget(
+            self._deadline_at,
+            configured_seconds=self._settings.llm_timeout_seconds,
+            provider_attempts=self._settings.gateway_max_provider_attempts,
+        )
+        if budget.provider_attempt_seconds <= 0 or budget.client_seconds <= 0:
+            raise TimeoutError("market agent deadline reached before model call")
+        kwargs["timeout"] = budget.client_seconds
+        kwargs["extra_body"] = {
+            **(kwargs.get("extra_body") or {}),
+            "request_timeout": budget.provider_attempt_seconds,
+        }
+        return await self._delegate.create(**kwargs)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._delegate, name)
 
 
 def collect_search_sources(events: list[Event]) -> dict[str, ExaSourceResult]:

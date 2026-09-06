@@ -1,8 +1,10 @@
 import json
 from collections.abc import Callable
+from datetime import datetime
 from functools import lru_cache
 
 import openai
+from distributed_agent_contracts import model_timeout_budget
 from pydantic import BaseModel, ValidationError
 
 from analyst.errors import InvalidOutputError, ProviderConfigurationError, ProviderUnavailableError
@@ -65,6 +67,7 @@ async def generate_structured[T: BaseModel](
     system_prompt: str,
     user_prompt: str,
     settings: AnalystAISettings,
+    deadline_at: datetime | None = None,
     client_factory: Callable[[AnalystAISettings], object] | None = None,
 ) -> T:
     if not settings.gateway_api_key:
@@ -74,6 +77,13 @@ async def generate_structured[T: BaseModel](
 
     client = (client_factory or _default_gateway_client)(settings)
     model = settings.model_route
+    budget = model_timeout_budget(
+        deadline_at,
+        configured_seconds=settings.llm_timeout_seconds,
+        provider_attempts=settings.gateway_max_provider_attempts,
+    )
+    if budget.provider_attempt_seconds <= 0 or budget.client_seconds <= 0:
+        raise TimeoutError("analyst deadline reached before model call")
     with generation_span(model, schema.__name__) as span:
         try:
             response = await client.chat.completions.create(
@@ -81,11 +91,21 @@ async def generate_structured[T: BaseModel](
                 messages=_messages(system_prompt, user_prompt),
                 response_format=_json_schema_response_format(schema),
                 max_tokens=settings.llm_max_output_tokens,
-                timeout=settings.llm_timeout_seconds,
+                timeout=budget.client_seconds,
+                extra_body=(
+                    {"request_timeout": budget.provider_attempt_seconds}
+                    if deadline_at is not None
+                    else None
+                ),
             )
         except _NO_RETRY as exc:
             record_error(span, exc, "rejected")
             raise ProviderConfigurationError(f"LLM gateway rejected the request: {exc}") from exc
+        except openai.APITimeoutError as exc:
+            record_error(span, exc, "deadline_exceeded")
+            if deadline_at is not None:
+                raise TimeoutError("analyst deadline reached during model call") from exc
+            raise ProviderUnavailableError(f"LLM gateway is unavailable: {exc}") from exc
         except Exception as exc:
             record_error(span, exc, "unavailable")
             raise ProviderUnavailableError(f"LLM gateway is unavailable: {exc}") from exc

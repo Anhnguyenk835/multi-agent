@@ -1,3 +1,5 @@
+import asyncio
+
 from distributed_agent_contracts import (
     AnalysisRequest,
     AnalysisResponse,
@@ -5,6 +7,7 @@ from distributed_agent_contracts import (
     ContractStatus,
     ErrorCode,
     copy_request_metadata,
+    remaining_seconds,
 )
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
@@ -33,12 +36,29 @@ def create_app(settings: DemoSettings | None = None) -> FastAPI:
     @app.post("/analyze", response_model=AnalysisResponse)
     async def analyze(request: AnalysisRequest):
         try:
-            with request_context(request), operation_span(
-                "analyst.analyze",
-                observation_type="agent",
-                attributes={"app.agent": "analyst", "app.attempt": request.attempt},
+            with (
+                request_context(request),
+                operation_span(
+                    "analyst.analyze",
+                    observation_type="agent",
+                    attributes={"app.agent": "analyst", "app.attempt": request.attempt},
+                ),
             ):
-                return await _analyze(request, runtime_settings)
+                remaining = remaining_seconds(request.deadline_at)
+                if remaining is None:
+                    return await _analyze(request, runtime_settings)
+                if remaining <= 0:
+                    raise TimeoutError
+                async with asyncio.timeout(remaining):
+                    return await _analyze(request, runtime_settings)
+        except TimeoutError:
+            failure = _failure_response(
+                request,
+                ErrorCode.DEADLINE_EXCEEDED,
+                "Analyst deadline exceeded",
+                retryable=True,
+            )
+            return _respond(failure.model_dump(mode="json"), 504)
         except ProviderConfigurationError:
             failure = _failure_response(
                 request,

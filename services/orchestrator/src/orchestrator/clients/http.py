@@ -9,6 +9,7 @@ from distributed_agent_contracts import (
     ErrorCode,
     WriterRequest,
     WriterResponse,
+    remaining_seconds,
 )
 from pydantic import ValidationError
 
@@ -21,7 +22,12 @@ class AnalystClient:
         self._url = f"{base_url.rstrip('/')}/analyze"
 
     async def analyze(self, request: AnalysisRequest) -> AnalysisResponse:
-        response = await _post(self._client, self._url, request.model_dump(mode="json"))
+        response = await _post(
+            self._client,
+            self._url,
+            request.model_dump(mode="json"),
+            request.deadline_at,
+        )
         try:
             result = AnalysisResponse.model_validate(response.json())
         except (ValidationError, ValueError) as error:
@@ -39,7 +45,12 @@ class WriterClient:
         self._stream_url = f"{base_url.rstrip('/')}/write/stream"
 
     async def write(self, request: WriterRequest) -> WriterResponse:
-        response = await _post(self._client, self._url, request.model_dump(mode="json"))
+        response = await _post(
+            self._client,
+            self._url,
+            request.model_dump(mode="json"),
+            request.deadline_at,
+        )
         try:
             result = WriterResponse.model_validate(response.json())
         except (ValidationError, ValueError) as error:
@@ -55,12 +66,14 @@ class WriterClient:
         on_event: Callable[[str, dict[str, object]], None],
     ) -> WriterResponse:
         """Consume the Writer's private SSE stream and retain the v1 response checks."""
+        timeout = _request_timeout(request.deadline_at)
         try:
             async with self._client.stream(
                 "POST",
                 self._stream_url,
                 json=request.model_dump(mode="json"),
                 headers={"Accept": "text/event-stream"},
+                timeout=timeout,
             ) as response:
                 if response.status_code >= 400:
                     raise _http_status_error("Writer", response.status_code)
@@ -101,9 +114,15 @@ class WriterClient:
         return completed
 
 
-async def _post(client: httpx.AsyncClient, url: str, payload: dict[str, object]) -> httpx.Response:
+async def _post(
+    client: httpx.AsyncClient,
+    url: str,
+    payload: dict[str, object],
+    deadline_at,
+) -> httpx.Response:
+    timeout = _request_timeout(deadline_at)
     try:
-        return await client.post(url, json=payload)
+        return await client.post(url, json=payload, timeout=timeout)
     except httpx.TimeoutException as error:
         raise AgentCallError(
             ErrorCode.DEADLINE_EXCEEDED,
@@ -116,6 +135,17 @@ async def _post(client: httpx.AsyncClient, url: str, payload: dict[str, object])
             "HTTP agent transport is unavailable",
             retryable=True,
         ) from error
+
+
+def _request_timeout(deadline_at) -> float | None:
+    timeout = remaining_seconds(deadline_at)
+    if timeout is not None and timeout <= 0:
+        raise AgentCallError(
+            ErrorCode.DEADLINE_EXCEEDED,
+            "HTTP agent deadline exceeded before the request",
+            retryable=True,
+        )
+    return timeout
 
 
 def _validate_response(name, request, response, status_code: int) -> None:

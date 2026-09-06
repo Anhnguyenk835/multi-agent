@@ -31,8 +31,8 @@ class OrchestratorSettings:
     # orchestrator cancels the call before the service can finish.
     researcher_policy: AgentPolicy = AgentPolicy(90.0, 1, 0.5)
     market_policy: AgentPolicy = AgentPolicy(90.0, 1, 0.5)
-    analyst_policy: AgentPolicy = AgentPolicy(40.0, 1, 0.5)
-    writer_policy: AgentPolicy = AgentPolicy(40.0, 1, 0.5)
+    analyst_policy: AgentPolicy = AgentPolicy(90.0, 1, 0.5)
+    writer_policy: AgentPolicy = AgentPolicy(90.0, 1, 0.5)
 
     @classmethod
     def from_environment(cls) -> "OrchestratorSettings":

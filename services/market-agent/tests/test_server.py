@@ -1,3 +1,4 @@
+from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import grpc
@@ -39,6 +40,24 @@ async def test_transient_failure_maps_to_grpc_unavailable() -> None:
         await server.stop(grace=None)
 
     assert error.value.code() is grpc.StatusCode.UNAVAILABLE
+
+
+@pytest.mark.anyio
+async def test_expired_deadline_stops_before_agent_run() -> None:
+    request = valid_request()
+    request.metadata.deadline_unix_ms = int(
+        (datetime.now(UTC) - timedelta(seconds=1)).timestamp() * 1000
+    )
+    server, port = await create_server("127.0.0.1:0", DemoSettings())
+    await server.start()
+    try:
+        async with grpc.aio.insecure_channel(f"127.0.0.1:{port}") as channel:
+            response = await market_pb2_grpc.MarketAgentStub(channel).AnalyzeMarket(request)
+    finally:
+        await server.stop(grace=None)
+
+    assert response.status == market_pb2.RESPONSE_STATUS_FAILED
+    assert response.error.code == market_pb2.ERROR_CODE_DEADLINE_EXCEEDED
 
 
 def _live_settings() -> DemoSettings:

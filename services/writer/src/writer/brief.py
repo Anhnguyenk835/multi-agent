@@ -18,6 +18,7 @@ async def write_brief_live(request: WriterRequest, settings: WriterAISettings) -
         system_prompt=SYSTEM_PROMPT,
         user_prompt=build_user_prompt(request),
         settings=settings,
+        deadline_at=request.deadline_at,
     )
     content = render_citation_links(result.content, request.citations)
     return WriterResponse(
@@ -36,6 +37,7 @@ async def stream_brief_live(request: WriterRequest, settings: WriterAISettings):
         system_prompt=SYSTEM_PROMPT,
         user_prompt=build_user_prompt(request),
         settings=settings,
+        deadline_at=request.deadline_at,
     ):
         if chunk.kind == "raw_delta":
             text = renderer.add(chunk.text)
@@ -51,7 +53,10 @@ async def stream_brief_live(request: WriterRequest, settings: WriterAISettings):
                 content=content,
                 citations=request.citations,
             )
-            yield {"type": "writer.completed", "data": {"response": response.model_dump(mode="json")}}
+            yield {
+                "type": "writer.completed",
+                "data": {"response": response.model_dump(mode="json")},
+            }
 
 
 def _display_chunks(content: str) -> list[str]:
@@ -90,7 +95,16 @@ def _partial_json_string(value: str, field: str) -> str | None:
         return ""
     output: list[str] = []
     index = quote + 1
-    escapes = {'"': '"', "\\": "\\", "/": "/", "b": "\b", "f": "\f", "n": "\n", "r": "\r", "t": "\t"}
+    escapes = {
+        '"': '"',
+        "\\": "\\",
+        "/": "/",
+        "b": "\b",
+        "f": "\f",
+        "n": "\n",
+        "r": "\r",
+        "t": "\t",
+    }
     while index < len(value):
         character = value[index]
         if character == '"':

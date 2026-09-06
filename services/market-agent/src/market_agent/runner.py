@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from datetime import datetime
 
 import openai
 from google.adk.events import Event
@@ -50,7 +51,13 @@ class MarketAgentRunner:
     def __init__(self, settings: DemoSettings | None = None) -> None:
         self._settings = settings or DemoSettings.from_environment()
 
-    async def analyze(self, query: str, request_id: str) -> MarketResult:
+    async def analyze(
+        self,
+        query: str,
+        request_id: str,
+        *,
+        deadline_at: datetime | None = None,
+    ) -> MarketResult:
         settings = self._settings
         with operation_span(
             "market-agent.run_adk_agent",
@@ -62,8 +69,11 @@ class MarketAgentRunner:
                     "market_researcher",
                     settings.ai,
                     settings.exa,
+                    deadline_at=deadline_at,
                 )
                 events = await _run_agent(agent, query, request_id)
+            except TimeoutError:
+                raise
             except _NO_RETRY as error:
                 raise ProviderConfigurationError(
                     "LLM gateway rejected the market agent request"

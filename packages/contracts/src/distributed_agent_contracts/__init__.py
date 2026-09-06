@@ -13,6 +13,11 @@ from distributed_agent_contracts.common import (
     copy_request_metadata,
     render_citation_links,
 )
+from distributed_agent_contracts.deadlines import (
+    ModelTimeoutBudget,
+    model_timeout_budget,
+    remaining_seconds,
+)
 from distributed_agent_contracts.orchestrator import WorkflowRequest, WorkflowResponse
 from distributed_agent_contracts.researcher import (
     ResearcherInput,
@@ -31,6 +36,7 @@ __all__ = [
     "ExecutiveBrief",
     "Finding",
     "MarketSignal",
+    "ModelTimeoutBudget",
     "RequestMetadata",
     "ResearcherInput",
     "ResearcherOutput",
@@ -41,5 +47,7 @@ __all__ = [
     "WriterRequest",
     "WriterResponse",
     "copy_request_metadata",
+    "model_timeout_budget",
+    "remaining_seconds",
     "render_citation_links",
 ]

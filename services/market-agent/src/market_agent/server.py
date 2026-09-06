@@ -1,6 +1,8 @@
 import asyncio
+from datetime import UTC, datetime
 
 import grpc
+from distributed_agent_contracts import remaining_seconds
 from distributed_agent_contracts.market.v1 import market_pb2, market_pb2_grpc
 from grpc_health.v1 import health, health_pb2, health_pb2_grpc
 
@@ -34,18 +36,23 @@ class MarketAgentService(market_pb2_grpc.MarketAgentServicer):
         ):
             await context.abort(grpc.StatusCode.INVALID_ARGUMENT, "invalid market request")
 
-        await self._settings.apply_delay()
-        if self._settings.failure_mode is FailureMode.TRANSIENT_ERROR:
-            await context.abort(grpc.StatusCode.UNAVAILABLE, "injected transient failure")
-        if self._settings.failure_mode is FailureMode.INVALID_RESPONSE:
-            return market_pb2.MarketResponse(
-                metadata=metadata,
-                status=market_pb2.RESPONSE_STATUS_UNSPECIFIED,
-            )
-
+        deadline_at = _deadline_from_unix_ms(metadata.deadline_unix_ms)
         try:
-            with request_span(request):
-                result = await self._runner.analyze(request.query, metadata.request_id)
+            remaining = remaining_seconds(deadline_at)
+            if remaining is None:
+                result = await self._analyze(request, context, deadline_at)
+            else:
+                if remaining <= 0:
+                    raise TimeoutError
+                async with asyncio.timeout(remaining):
+                    result = await self._analyze(request, context, deadline_at)
+        except TimeoutError:
+            return _failure_response(
+                metadata,
+                market_pb2.ERROR_CODE_DEADLINE_EXCEEDED,
+                "Market Agent deadline exceeded",
+                retryable=True,
+            )
         except ProviderConfigurationError:
             return _failure_response(
                 metadata,
@@ -67,6 +74,12 @@ class MarketAgentService(market_pb2_grpc.MarketAgentServicer):
                 "Market Agent returned invalid structured output",
                 retryable=False,
             )
+        if result is None:
+            return market_pb2.MarketResponse(
+                metadata=metadata,
+                status=market_pb2.RESPONSE_STATUS_UNSPECIFIED,
+            )
+
         signals = [
             market_pb2.MarketSignal(
                 topic=signal["topic"],
@@ -81,6 +94,19 @@ class MarketAgentService(market_pb2_grpc.MarketAgentServicer):
             market_signals=signals,
             competitors=result.competitors,
         )
+
+    async def _analyze(self, request, context, deadline_at: datetime | None):
+        await self._settings.apply_delay()
+        if self._settings.failure_mode is FailureMode.TRANSIENT_ERROR:
+            await context.abort(grpc.StatusCode.UNAVAILABLE, "injected transient failure")
+        if self._settings.failure_mode is FailureMode.INVALID_RESPONSE:
+            return None
+        with request_span(request):
+            return await self._runner.analyze(
+                request.query,
+                request.metadata.request_id,
+                deadline_at=deadline_at,
+            )
 
 
 async def create_server(
@@ -117,6 +143,12 @@ def _failure_response(metadata, code: int, message: str, *, retryable: bool):
         status=market_pb2.RESPONSE_STATUS_FAILED,
         error=market_pb2.ContractError(code=code, message=message, retryable=retryable),
     )
+
+
+def _deadline_from_unix_ms(value: int) -> datetime | None:
+    if value <= 0:
+        return None
+    return datetime.fromtimestamp(value / 1000, tz=UTC)
 
 
 if __name__ == "__main__":

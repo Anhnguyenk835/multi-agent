@@ -1,8 +1,10 @@
+import asyncio
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from urllib.parse import urlparse
 
+from distributed_agent_contracts import remaining_seconds
 from exa_py import AsyncExa
 from google.adk.tools import ToolContext
 
@@ -49,6 +51,7 @@ def build_search_function(
     settings: MarketExaSettings,
     *,
     client_factory: Callable[[MarketExaSettings], AsyncExa] | None = None,
+    deadline_at: datetime | None = None,
 ):
     """Build a fresh `search` function bound to `settings`.
 
@@ -83,11 +86,22 @@ def build_search_function(
                 "app.tool.requested_results": settings.exa_max_results,
             },
         ):
-            response = await client.search(
-                query,
-                num_results=settings.exa_max_results,
-                contents={"text": {"maxCharacters": settings.exa_content_max_characters}},
-            )
+            remaining = remaining_seconds(deadline_at)
+            if remaining is None:
+                response = await client.search(
+                    query,
+                    num_results=settings.exa_max_results,
+                    contents={"text": {"maxCharacters": settings.exa_content_max_characters}},
+                )
+            else:
+                if remaining <= 1.0:
+                    raise TimeoutError("market agent deadline reached before search")
+                async with asyncio.timeout(remaining - 1.0):
+                    response = await client.search(
+                        query,
+                        num_results=settings.exa_max_results,
+                        contents={"text": {"maxCharacters": settings.exa_content_max_characters}},
+                    )
 
         retrieved_at = datetime.now(UTC).isoformat()
         results: list[dict[str, object]] = []

@@ -8,8 +8,9 @@ from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 from researcher import telemetry
+from researcher.search import ExaSourceResult, parse_tool_message
 from researcher.settings import ResearcherExaSettings
-from researcher.tools import ExaSourceResult, build_search_tool, parse_tool_message
+from researcher.tools import build_search_tool
 
 
 def _exa_result(**overrides: object) -> SimpleNamespace:

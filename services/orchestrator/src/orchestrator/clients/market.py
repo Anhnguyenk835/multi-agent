@@ -7,6 +7,7 @@ from distributed_agent_contracts import (
     MarketSignal,
     RequestMetadata,
     Source,
+    remaining_seconds,
 )
 from distributed_agent_contracts.market.v1 import market_pb2, market_pb2_grpc
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
@@ -42,8 +43,15 @@ class MarketClient:
             ),
             query=request.query,
         )
+        timeout = remaining_seconds(request.deadline_at)
+        if timeout is not None and timeout <= 0:
+            raise AgentCallError(
+                ErrorCode.DEADLINE_EXCEEDED,
+                "Market Agent deadline exceeded before the gRPC call",
+                retryable=True,
+            )
         try:
-            response = await self._stub.AnalyzeMarket(proto_request)
+            response = await self._stub.AnalyzeMarket(proto_request, timeout=timeout)
         except grpc.aio.AioRpcError as error:
             raise _grpc_error(error) from error
 

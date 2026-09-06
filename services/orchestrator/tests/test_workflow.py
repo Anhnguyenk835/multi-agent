@@ -226,6 +226,17 @@ async def test_happy_path_fans_out_concurrently_and_is_idempotent() -> None:
     assert gate.count == 2
     assert len(researcher.requests) == len(market.requests) == 1
     assert len(analyst.requests) == len(writer.requests) == 1
+    child_requests = [
+        researcher.requests[0],
+        market.requests[0],
+        analyst.requests[0],
+        writer.requests[0],
+    ]
+    assert all(request.deadline_at is not None for request in child_requests)
+    assert all(
+        0 < (request.deadline_at - datetime.now(UTC)).total_seconds() <= 1
+        for request in child_requests
+    )
 
 
 @pytest.mark.anyio

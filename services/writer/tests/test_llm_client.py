@@ -1,3 +1,4 @@
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
 import httpx
@@ -65,6 +66,24 @@ async def test_openai_success_returns_validated_schema() -> None:
 
     assert result == _Answer(value="ok")
     assert len(client.calls) == 1
+
+
+@pytest.mark.anyio
+async def test_deadline_is_split_across_gateway_provider_attempts() -> None:
+    client = _FakeClient(response=_chat_response('{"value": "ok"}'))
+
+    await generate_structured(
+        schema=_Answer,
+        system_prompt="system",
+        user_prompt="user",
+        settings=_live_settings(llm_timeout_seconds=60, gateway_max_provider_attempts=4),
+        deadline_at=datetime.now(UTC) + timedelta(seconds=42),
+        client_factory=lambda settings: client,
+    )
+
+    call = client.calls[0]
+    assert 40 < call["timeout"] <= 41
+    assert 9 < call["extra_body"]["request_timeout"] <= 10
 
 
 @pytest.mark.anyio

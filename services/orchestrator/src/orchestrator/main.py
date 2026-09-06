@@ -64,9 +64,7 @@ def create_app(
     )
     allowed_origins = [
         origin.strip()
-        for origin in os.getenv(
-            "ORCHESTRATOR_ALLOWED_ORIGINS", "http://localhost:5173"
-        ).split(",")
+        for origin in os.getenv("ORCHESTRATOR_ALLOWED_ORIGINS", "http://localhost:5173").split(",")
         if origin.strip()
     ]
     app.add_middleware(
@@ -130,9 +128,7 @@ def create_app(
                     request.trace_id,
                 )
                 yield encode_sse(
-                    _error_event(
-                        request, ErrorCode.INTERNAL_ERROR, "Workflow stream interrupted"
-                    )
+                    _error_event(request, ErrorCode.INTERNAL_ERROR, "Workflow stream interrupted")
                 )
 
         return StreamingResponse(

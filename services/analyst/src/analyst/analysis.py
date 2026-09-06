@@ -25,6 +25,7 @@ async def analyze_live(request: AnalysisRequest, settings: AnalystAISettings) ->
         system_prompt=SYSTEM_PROMPT,
         user_prompt=user_prompt,
         settings=settings,
+        deadline_at=request.deadline_at,
     )
     citations = [_citation(source) for source in sources]
     content = render_citation_links(result.content, citations)

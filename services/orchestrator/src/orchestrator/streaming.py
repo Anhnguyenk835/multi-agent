@@ -20,11 +20,7 @@ def sanitize_query(value: str) -> str:
 
 def safe_source_url(value: str) -> str | None:
     parsed = urlsplit(value)
-    if (
-        parsed.scheme not in {"http", "https"}
-        or not parsed.netloc
-        or "@" in parsed.path
-    ):
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc or "@" in parsed.path:
         return None
     return urlunsplit((parsed.scheme, parsed.netloc, parsed.path, "", ""))
 
@@ -57,4 +53,6 @@ def emit_event(
 
 def encode_sse(event: Mapping[str, Any]) -> str:
     """Encode a JSON event without allowing SSE frame injection."""
-    return f"event: {event['type']}\ndata: {json.dumps(event, default=str, separators=(',', ':'))}\n\n"
+    return (
+        f"event: {event['type']}\ndata: {json.dumps(event, default=str, separators=(',', ':'))}\n\n"
+    )

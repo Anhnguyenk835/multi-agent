@@ -169,9 +169,17 @@ class WorkflowNodes:
             "market",
             {"message": "Gathering market signals"},
         )
+
         def request_factory(attempt: int) -> MarketAgentRequest:
             return MarketAgentRequest(
-                **_request_fields(state, attempt),
+                **_request_fields(
+                    state,
+                    attempt,
+                    deadline_at=_child_deadline_at(
+                        state,
+                        self._settings.market_policy.timeout_seconds,
+                    ),
+                ),
                 query=state["query"],
             )
 
@@ -244,7 +252,14 @@ class WorkflowNodes:
 
         def request_factory(attempt: int) -> AnalysisRequest:
             return AnalysisRequest(
-                **_request_fields(state, attempt),
+                **_request_fields(
+                    state,
+                    attempt,
+                    deadline_at=_child_deadline_at(
+                        state,
+                        self._settings.analyst_policy.timeout_seconds,
+                    ),
+                ),
                 query=state["query"],
                 research_findings=research_output.findings if research_output else [],
                 market_signals=market_output.market_signals if market_output else [],
@@ -281,7 +296,14 @@ class WorkflowNodes:
 
         def request_factory(attempt: int) -> WriterRequest:
             return WriterRequest(
-                **_request_fields(state, attempt),
+                **_request_fields(
+                    state,
+                    attempt,
+                    deadline_at=_child_deadline_at(
+                        state,
+                        self._settings.writer_policy.timeout_seconds,
+                    ),
+                ),
                 query=state["query"],
                 analysis=analysis.content,
                 citations=analysis.citations,

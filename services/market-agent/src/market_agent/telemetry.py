@@ -49,11 +49,8 @@ def operation_span(
         span_attributes["langfuse.trace.metadata.request_id"] = str(request_id)
     if business_trace_id is not None:
         span_attributes["app.business_trace_id"] = str(business_trace_id)
-        span_attributes["langfuse.trace.metadata.business_trace_id"] = str(
-            business_trace_id
-        )
+        span_attributes["langfuse.trace.metadata.business_trace_id"] = str(business_trace_id)
     if contract_version is not None:
         span_attributes["app.contract_version"] = str(contract_version)
     with _tracer.start_as_current_span(name, attributes=span_attributes) as span:
         yield span
-
