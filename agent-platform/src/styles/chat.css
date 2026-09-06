@@ -1,0 +1,22 @@
+button,
+textarea {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+.chat-brand-mark {
+  width: 32px;
+  height: 32px;
+  flex-basis: 32px;
+}
+
+.chat-send-button {
+  background: var(--color-primary-500);
+  color: white;
+}
+
+.chat-send-button:hover { background: var(--color-primary-600); }
+.chat-send-button:disabled { cursor: not-allowed; background: var(--color-neutral-200); color: var(--color-neutral-500); }

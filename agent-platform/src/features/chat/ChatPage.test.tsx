@@ -1,15 +1,16 @@
 import '@testing-library/jest-dom/vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import App from './App'
+import { MemoryRouter } from 'react-router-dom'
+import ChatPage from './ChatPage'
 
 const encoder = new TextEncoder()
 
-function sseFrame(eventType, data) {
+function sseFrame(eventType: string, data: unknown) {
   return `event: ${eventType}\ndata: ${JSON.stringify(data)}\n\n`
 }
 
-function sse(frames) {
+function sse(frames: string[]) {
   return new ReadableStream({
     start(controller) {
       controller.enqueue(encoder.encode(frames.join('')))
@@ -43,7 +44,7 @@ describe('Agent Platform streaming chat', () => {
       ]),
     }))
 
-    render(<App />)
+    render(<MemoryRouter initialEntries={['/chat/demo']}><ChatPage /></MemoryRouter>)
     fireEvent.change(screen.getByLabelText('Message Aster'), { target: { value: 'Research this' } })
     fireEvent.click(screen.getByLabelText('Send message'))
 
