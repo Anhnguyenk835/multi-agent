@@ -50,7 +50,7 @@ export function updateAssistantMessage(
   messageId: string,
   event: WorkflowEvent,
 ) {
-  setMessages((current) => current.map((message) => (
-    message.id === messageId ? applyWorkflowEvent(message, event) : message
-  )))
+  setMessages((current) =>
+    current.map((message) => (message.id === messageId ? applyWorkflowEvent(message, event) : message)),
+  )
 }

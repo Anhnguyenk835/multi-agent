@@ -6,7 +6,11 @@ import App from './App'
 
 describe('application routes', () => {
   it('redirects unknown routes to chat', async () => {
-    render(<MemoryRouter initialEntries={['/unknown']}><App /></MemoryRouter>)
+    render(
+      <MemoryRouter initialEntries={['/unknown']}>
+        <App />
+      </MemoryRouter>,
+    )
     expect(await screen.findByLabelText('Message Aster')).toBeInTheDocument()
   })
 })

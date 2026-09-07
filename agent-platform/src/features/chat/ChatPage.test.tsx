@@ -24,27 +24,33 @@ describe('Agent Platform streaming chat', () => {
 
   it('renders agent activity, selected sources, writer text, and the final brief', async () => {
     const finalBrief = {
-      content:
-        '# Final brief\n\nValidated summary [1](https://example.com/source "Primary source — Example")',
+      content: '# Final brief\n\nValidated summary [1](https://example.com/source "Primary source — Example")',
       citations: [{ title: 'Primary source', url: 'https://example.com/source', publisher: 'Example' }],
       status: 'success',
     }
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
-      ok: true,
-      body: sse([
-        sseFrame('agent.activity', { agent: 'researcher', data: { message: 'Searching public sources' } }),
-        sseFrame('research.source_found', {
-          agent: 'researcher',
-          data: { title: 'Primary source', publisher: 'Example', url: 'https://example.com/source' },
-        }),
-        sseFrame('writer.delta', { agent: 'writer', data: { text: 'Drafting summary' } }),
-        // Mirrors the real backend shape: WorkflowResponse nests the brief
-        // under final_brief, not at the top level of data.response.
-        sseFrame('workflow.completed', { data: { response: { final_brief: finalBrief } } }),
-      ]),
-    }))
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        body: sse([
+          sseFrame('agent.activity', { agent: 'researcher', data: { message: 'Searching public sources' } }),
+          sseFrame('research.source_found', {
+            agent: 'researcher',
+            data: { title: 'Primary source', publisher: 'Example', url: 'https://example.com/source' },
+          }),
+          sseFrame('writer.delta', { agent: 'writer', data: { text: 'Drafting summary' } }),
+          // Mirrors the real backend shape: WorkflowResponse nests the brief
+          // under final_brief, not at the top level of data.response.
+          sseFrame('workflow.completed', { data: { response: { final_brief: finalBrief } } }),
+        ]),
+      }),
+    )
 
-    render(<MemoryRouter initialEntries={['/chat/demo']}><ChatPage /></MemoryRouter>)
+    render(
+      <MemoryRouter initialEntries={['/chat/demo']}>
+        <ChatPage />
+      </MemoryRouter>,
+    )
     fireEvent.change(screen.getByLabelText('Message Aster'), { target: { value: 'Research this' } })
     fireEvent.click(screen.getByLabelText('Send message'))
 

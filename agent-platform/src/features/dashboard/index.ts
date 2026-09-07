@@ -1,2 +1,2 @@
-export { default as DashboardPage } from './DashboardPage'
-export type { Competitor, DashboardView, Idea, Topic } from './types'
+export { default as MarketWorkspacePage } from './MarketWorkspacePage'
+export type { Competitor, MarketAnalysisResponse, MarketView, OpportunityGap } from './types'

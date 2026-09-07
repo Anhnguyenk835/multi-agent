@@ -28,7 +28,10 @@ function CitationLink({ href = '#', title, children }: AnchorHTMLAttributes<HTML
         {children}
       </a>
       {open && (
-        <span role="tooltip" className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 w-64 -translate-x-1/2 rounded-lg border border-slate-200 bg-white p-3 text-left text-xs leading-5 text-slate-600 shadow-lg">
+        <span
+          role="tooltip"
+          className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 w-64 -translate-x-1/2 rounded-lg border border-slate-200 bg-white p-3 text-left text-xs leading-5 text-slate-600 shadow-lg"
+        >
           <span className="line-clamp-2 block font-medium text-slate-800">{label || href}</span>
           {publisher && <span className="mt-1 block truncate text-[11px] text-slate-400">{publisher}</span>}
           <span className="absolute left-1/2 top-full -mt-px h-2 w-2 -translate-x-1/2 rotate-45 border-b border-r border-slate-200 bg-white" />
@@ -46,7 +49,11 @@ const markdownComponents: Components = {
   ul: (props) => <ul className="mt-2 list-disc space-y-0.5 pl-5" {...props} />,
   ol: (props) => <ol className="mt-2 list-decimal space-y-0.5 pl-5" {...props} />,
   strong: (props) => <strong className="font-semibold text-slate-800" {...props} />,
-  a: ({ href, title, children }) => <CitationLink href={href} title={title}>{children}</CitationLink>,
+  a: ({ href, title, children }) => (
+    <CitationLink href={href} title={title}>
+      {children}
+    </CitationLink>
+  ),
 }
 
 export function MarkdownContent({ children }: { children: string }) {
@@ -60,7 +67,13 @@ export function SourcesList({ citations }: { citations?: Citation[] }) {
     <div className="mt-3 border-t border-slate-200 pt-2 text-xs text-slate-500">
       <p className="mb-1 font-semibold uppercase text-slate-400">Sources</p>
       {citations.map((citation, index) => (
-        <a key={citation.url} href={citation.url} target="_blank" rel="noreferrer" className="block truncate hover:text-slate-800">
+        <a
+          key={citation.url}
+          href={citation.url}
+          target="_blank"
+          rel="noreferrer"
+          className="block truncate hover:text-slate-800"
+        >
           [{index + 1}] {citation.title} · {citation.publisher}
         </a>
       ))}

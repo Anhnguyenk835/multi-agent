@@ -1,44 +1,473 @@
-import { ArrowRight, Bookmark, Check, CircleDollarSign, Lightbulb, Network, Sparkles, TrendingUp, Users } from 'lucide-react'
-import { Button, IconButton } from '../../../components/ui'
-import type { Competitor, DashboardView, Idea, Topic } from '../types'
-import { Metric, SectionHeader, StatusPill } from './DashboardPrimitives'
+import {
+  AlertTriangle,
+  ArrowUpRight,
+  BarChart3,
+  CircleDollarSign,
+  Compass,
+  Database,
+  Gauge,
+  ShieldAlert,
+  TrendingUp,
+  Users,
+} from 'lucide-react'
+import type { MarketAnalysisResponse, MarketMetric, QualitativeLevel, TrendPoint } from '../types'
+import { StatusPill } from './DashboardPrimitives'
 
-const trendPoints = '0,116 52,108 104,111 156,91 208,95 260,72 312,81 364,52 416,57 468,31 520,40 572,18 624,23 676,8'
+const sectionClass = 'mt-9'
+const cardClass = 'min-w-0 rounded-lg border border-slate-200 bg-white'
+const eyebrowClass = 'text-[11px] font-bold text-slate-400 uppercase'
+const evidenceButtonClass =
+  'inline-flex items-center gap-1.5 bg-transparent py-1 text-[13px] font-bold text-blue-700 hover:text-blue-600'
 
-function MarketChart() {
-  return <div className="market-chart" aria-label="Market momentum rose from 42 to 82 over twelve weeks"><div className="chart-y-labels" aria-hidden="true"><span>90</span><span>60</span><span>30</span><span>0</span></div><div className="chart-plot"><div className="chart-grid" aria-hidden="true" /><svg viewBox="0 0 676 128" preserveAspectRatio="none" role="img"><title>Market momentum over twelve weeks</title><polyline points={trendPoints} fill="none" stroke="#1463ff" strokeWidth="3" vectorEffect="non-scaling-stroke" /><circle cx="676" cy="8" r="5" fill="#ffffff" stroke="#1463ff" strokeWidth="3" vectorEffect="non-scaling-stroke" /></svg><div className="chart-x-labels" aria-hidden="true"><span>Jun 17</span><span>Jul 08</span><span>Jul 29</span><span>Aug 19</span><span>Sep 06</span></div></div></div>
+const scoreLabels: Record<keyof MarketAnalysisResponse['overview']['scorecard'], string> = {
+  demand: 'Demand',
+  market_size: 'Market size',
+  momentum: 'Momentum',
+  commercial_quality: 'Commercial quality',
+  accessibility: 'Accessibility',
+  competitive_headroom: 'Competitive headroom',
 }
 
-function CoverageMap() {
-  return <div className="coverage-map" aria-label="Research coverage network: 28 sources, 43 claims, and 5 categories"><span className="coverage-node node-main"><Network size={19} /></span><span className="coverage-node node-one">28</span><span className="coverage-node node-two">43</span><span className="coverage-node node-three">5</span><span className="coverage-node node-four"><Check size={14} /></span><i className="link-one" /><i className="link-two" /><i className="link-three" /><i className="link-four" /></div>
+const levelTone = (value: QualitativeLevel | 'unknown') =>
+  value === 'high' ? 'green' : value === 'moderate' ? 'amber' : 'neutral'
+
+const titleCase = (value: string) =>
+  value
+    .split('_')
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ')
+
+const compactNumber = (value: number, unit: MarketMetric['unit']) => {
+  if (unit === 'USD') {
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: 'USD',
+      notation: 'compact',
+      maximumFractionDigits: 1,
+    }).format(value)
+  }
+  if (unit === 'percent') return `${value}%`
+  return new Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 1 }).format(value)
 }
 
-export function TopicRows({ topics, onSelect }: { topics: Topic[]; onSelect: (id: string) => void }) {
-  return <div className="topic-rows">{topics.map((topic) => <button className="topic-row" key={topic.id} onClick={() => onSelect(topic.id)}><span className="topic-dot" style={{ backgroundColor: topic.color }} /><span className="topic-copy"><strong>{topic.name}</strong><span>{topic.summary}</span></span><span className="topic-stat"><strong>{topic.momentum}</strong><small>momentum</small></span><span className="topic-stat"><strong>{topic.competitors}</strong><small>competitors</small></span><span className="topic-stat"><strong>{topic.ideas}</strong><small>ideas</small></span><StatusPill tone={topic.status === 'Active' ? 'blue' : topic.status === 'Tracking' ? 'green' : 'amber'}>{topic.status}</StatusPill><ArrowRight className="row-arrow" size={17} /></button>)}</div>
+const metricValue = (metric: MarketMetric) => {
+  if (metric.range) {
+    return `${compactNumber(metric.range.min, metric.unit)}–${compactNumber(metric.range.max, metric.unit)}`
+  }
+  return metric.value == null ? 'Not available' : compactNumber(metric.value, metric.unit)
 }
 
-export function IdeaCard({ idea, onToggle, onOpen }: { idea: Idea; onToggle: (id: string) => void; onOpen: (name: string) => void }) {
-  const isShortlisted = idea.status === 'Shortlisted'
-  return <article className="idea-card"><div className="idea-topline"><StatusPill tone={isShortlisted ? 'blue' : idea.status === 'Validating' ? 'green' : 'neutral'}>{idea.status}</StatusPill><IconButton className="icon-button" active={isShortlisted} onClick={() => onToggle(idea.id)} label={isShortlisted ? `Remove ${idea.title} from shortlist` : `Shortlist ${idea.title}`}><Bookmark size={16} fill={isShortlisted ? 'currentColor' : 'none'} /></IconButton></div><h3>{idea.title}</h3><p>{idea.description}</p><dl><div><dt>Audience</dt><dd>{idea.audience}</dd></div><div><dt>Model</dt><dd>{idea.model}</dd></div></dl><div className="idea-footer"><span className="score-ring" style={{ '--score': `${idea.score * 3.6}deg` } as React.CSSProperties}>{idea.score}</span><span><strong>{idea.evidence} signals</strong><small>Evidence linked</small></span><button className="text-button" onClick={() => onOpen(idea.title)}>Open <ArrowRight size={14} /></button></div></article>
+function EvidenceButton({ sourceIds, onOpen }: { sourceIds: string[]; onOpen: (sourceIds: string[]) => void }) {
+  return (
+    <button className={evidenceButtonClass} onClick={() => onOpen(sourceIds)}>
+      <Database size={13} />
+      {sourceIds.length} {sourceIds.length === 1 ? 'source' : 'sources'}
+    </button>
+  )
 }
 
-export function CompetitorTable({ rows, onAnalyze }: { rows: Competitor[]; onAnalyze: (name: string) => void }) {
-  return <div className="data-table-wrap"><table className="data-table"><thead><tr><th>Company</th><th>Category</th><th>Pricing</th><th>Revenue evidence</th><th>Confidence</th><th>Signal</th><th><span className="ui-sr-only">Actions</span></th></tr></thead><tbody>{rows.map((competitor) => <tr key={competitor.id}><td><span className="company-avatar">{competitor.name[0]}</span><span><strong>{competitor.name}</strong><small>Updated {competitor.updated}</small></span></td><td>{competitor.category}</td><td>{competitor.pricing}</td><td><StatusPill tone={competitor.revenue === 'Reported' ? 'green' : competitor.revenue === 'Estimated' ? 'amber' : 'neutral'}>{competitor.revenue}</StatusPill></td><td><span className="confidence"><i style={{ width: `${competitor.confidence}%` }} /></span><small>{competitor.confidence}%</small></td><td className="positive">{competitor.signal}</td><td><IconButton className="icon-button" onClick={() => onAnalyze(competitor.name)} label={`Analyze ${competitor.name}`}><ArrowRight size={16} /></IconButton></td></tr>)}</tbody></table></div>
+function MarketMetricCard({ metric, onEvidence }: { metric: MarketMetric; onEvidence: (sourceIds: string[]) => void }) {
+  return (
+    <article className={`${cardClass} p-4`}>
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-xs font-semibold text-slate-600">{metric.label}</span>
+        <StatusPill tone="neutral">{metric.evidence_class}</StatusPill>
+      </div>
+      <strong className="mt-3.5 block text-[26px] leading-none text-slate-900 max-sm:text-[21px]">
+        {metricValue(metric)}
+      </strong>
+      <div className="mt-2.5 flex items-center justify-between gap-2 text-[13px] text-slate-500">
+        {metric.change ? (
+          <span className={metric.change.value >= 0 ? 'font-bold text-emerald-700' : 'font-bold text-red-700'}>
+            {metric.change.value >= 0 ? '+' : ''}
+            {metric.change.value}% {metric.change.period}
+          </span>
+        ) : (
+          <span>No comparison</span>
+        )}
+        <span>{metric.period}</span>
+      </div>
+      <div className="mt-4 flex items-center justify-between gap-2 border-t border-slate-100 pt-2.5 text-[13px] text-slate-500">
+        <span>{metric.confidence}% confidence</span>
+        <EvidenceButton sourceIds={metric.source_ids} onOpen={onEvidence} />
+      </div>
+      {metric.methodology && <p className="mt-2 text-[13px] leading-relaxed text-slate-400">{metric.methodology}</p>}
+    </article>
+  )
 }
 
-interface MarketOverviewProps {
-  topic: Topic
-  topics: Topic[]
-  ideas: Idea[]
-  competitors: Competitor[]
-  onSelectTopic: (id: string) => void
-  onToggleIdea: (id: string) => void
-  onOpenIdea: (name: string) => void
-  onNavigate: (view: DashboardView) => void
-  onAnalyze: (name: string) => void
+function MomentumChart({ points }: { points: TrendPoint[] }) {
+  const values = points.map((point) => point.search_index ?? 0)
+  const max = Math.max(...values, 1)
+  const min = Math.min(...values)
+  const range = Math.max(max - min, 1)
+  const coordinates = values
+    .map((value, index) => {
+      const x = points.length === 1 ? 340 : (index / (points.length - 1)) * 680
+      const y = 112 - ((value - min) / range) * 92
+      return `${x},${y}`
+    })
+    .join(' ')
+
+  return (
+    <div className="mt-5" aria-label="Search demand index over the available periods">
+      <div className="relative h-[150px] bg-[repeating-linear-gradient(to_bottom,transparent_0,transparent_41px,#edf0f4_42px)]">
+        <svg
+          className="relative z-1 h-32 w-full overflow-visible"
+          viewBox="0 0 680 128"
+          preserveAspectRatio="none"
+          role="img"
+        >
+          <title>Search demand index</title>
+          <polyline
+            points={coordinates}
+            fill="none"
+            stroke="#1463ff"
+            strokeWidth="3"
+            vectorEffect="non-scaling-stroke"
+          />
+          {values.map((value, index) => {
+            const x = points.length === 1 ? 340 : (index / (points.length - 1)) * 680
+            const y = 112 - ((value - min) / range) * 92
+            return (
+              <circle key={points[index]?.period} cx={x} cy={y} r="4" fill="#fff" stroke="#1463ff" strokeWidth="3" />
+            )
+          })}
+        </svg>
+      </div>
+      <div className="-mt-0.5 flex justify-between gap-2.5">
+        {points.map((point, index) => (
+          <span
+            className={`flex flex-col text-[9px] text-slate-400 ${index === 1 ? 'items-center' : index === points.length - 1 ? 'items-end' : ''}`}
+            key={point.period}
+          >
+            <strong className="text-xs text-slate-700">{point.search_index ?? 'N/A'}</strong>
+            <small>{point.period}</small>
+          </span>
+        ))}
+      </div>
+    </div>
+  )
 }
 
-export function MarketOverview({ topic, topics, ideas, competitors, onSelectTopic, onToggleIdea, onOpenIdea, onNavigate, onAnalyze }: MarketOverviewProps) {
-  const topicIdeas = ideas.filter((idea) => idea.topicId === topic.id).slice(0, 3)
-  return <><section className="metric-band" aria-label="Topic metrics"><Metric icon={TrendingUp} label="Market momentum" value={`${topic.momentum}/100`} detail="Up 14 points" tone="blue" /><Metric icon={Users} label="Tracked competitors" value={topic.competitors} detail="3 added this month" tone="violet" /><Metric icon={Lightbulb} label="Saved ideas" value={topic.ideas} detail="2 shortlisted" tone="amber" /><Metric icon={CircleDollarSign} label="Pricing median" value="$18" detail="Per user / month" tone="green" /></section><section className="overview-grid"><article className="panel momentum-panel"><div className="panel-heading"><div><span className="panel-kicker">12-week signal</span><h2>Market momentum</h2></div><div className="legend"><i />Composite score</div></div><MarketChart /><div className="chart-note"><Sparkles size={15} /><span><strong>Acceleration detected.</strong> Launch activity and user discussion increased together over the last three weeks.</span></div></article><article className="panel coverage-panel"><div className="panel-heading"><div><span className="panel-kicker">Evidence graph</span><h2>Research coverage</h2></div><StatusPill tone="green">Strong</StatusPill></div><CoverageMap /><div className="coverage-legend"><span><i className="blue-dot" />28 sources</span><span><i className="green-dot" />43 claims</span><span><i className="amber-dot" />5 categories</span></div><Button className="secondary-button" variant="secondary" block onClick={() => onNavigate('analyses')}>Inspect latest analysis <ArrowRight size={14} /></Button></article></section><section className="content-section"><SectionHeader eyebrow="Workspace" title="Tracked markets" action="View all topics" onAction={() => onNavigate('topics')} /><TopicRows topics={topics} onSelect={onSelectTopic} /></section><section className="content-section"><SectionHeader eyebrow="Opportunity queue" title="Ideas worth testing" action="View all ideas" onAction={() => onNavigate('ideas')} /><div className="idea-grid">{topicIdeas.map((idea) => <IdeaCard key={idea.id} idea={idea} onToggle={onToggleIdea} onOpen={onOpenIdea} />)}</div></section><section className="content-section"><SectionHeader eyebrow="Landscape" title="Competitors gaining attention" action="Compare all" onAction={() => onNavigate('competitors')} /><CompetitorTable rows={competitors.slice(0, 4)} onAnalyze={onAnalyze} /></section></>
+export function MarketOverview({
+  report,
+  onOpenEvidence,
+}: {
+  report: MarketAnalysisResponse
+  onOpenEvidence: (sourceIds: string[]) => void
+}) {
+  const { overview, competitors } = report
+  const price = overview.commercial_dynamics.typical_annual_price
+
+  return (
+    <>
+      <section
+        className={`${cardClass} mt-[18px] grid grid-cols-[minmax(0,1.35fr)_minmax(360px,1fr)] gap-7 border-l-[3px] border-l-blue-600 px-6 py-[22px] max-[1100px]:grid-cols-1 max-sm:p-[18px]`}
+      >
+        <div>
+          <span className={eyebrowClass}>Executive market verdict</span>
+          <div className="mt-2 flex items-center gap-3">
+            <h2 className="text-[21px] font-medium text-slate-900">{titleCase(overview.verdict.status)}</h2>
+            <StatusPill tone="blue">{report.report.overall_confidence}% confidence</StatusPill>
+          </div>
+          <p className="mt-2.5 max-w-[700px] text-sm leading-relaxed text-slate-600">{overview.verdict.summary}</p>
+        </div>
+        <div className="grid grid-cols-2 gap-[18px] border-l border-slate-200 pl-6 max-[1100px]:border-t max-[1100px]:border-l-0 max-[1100px]:pt-[18px] max-[1100px]:pl-0 max-sm:grid-cols-1">
+          <div className="flex flex-col gap-2">
+            <strong className="mb-0.5 text-xs text-slate-700">Market strengths</strong>
+            {overview.verdict.strengths.map((strength) => (
+              <span className="flex items-start gap-1.5 text-sm leading-snug text-slate-500" key={strength}>
+                <TrendingUp className="shrink-0 text-emerald-600" size={13} /> {strength}
+              </span>
+            ))}
+          </div>
+          <div className="flex flex-col gap-2">
+            <strong className="mb-0.5 text-xs text-slate-700">Structural constraints</strong>
+            {overview.verdict.constraints.map((constraint) => (
+              <span className="flex items-start gap-1.5 text-sm leading-snug text-slate-500" key={constraint}>
+                <AlertTriangle className="shrink-0 text-amber-600" size={13} /> {constraint}
+              </span>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section
+        className="mt-3.5 grid grid-cols-6 overflow-hidden rounded-lg border border-slate-200 bg-white max-[1100px]:grid-cols-3 max-sm:grid-cols-2"
+        aria-label="Market scorecard"
+      >
+        {Object.entries(overview.scorecard).map(([key, score]) => (
+          <article
+            className="min-w-0 border-r border-b border-slate-200 p-3.5 even:max-sm:border-r-0 [&:nth-child(3)]:max-[1100px]:border-r-0 [&:nth-child(6)]:border-r-0 [&:nth-child(n+4)]:max-[1100px]:border-b-0 [&:nth-child(-n+4)]:max-sm:border-b"
+            key={key}
+          >
+            <div className="flex items-baseline justify-between gap-1.5">
+              <span className="truncate text-[11px] text-slate-500">
+                {scoreLabels[key as keyof typeof scoreLabels]}
+              </span>
+              <strong className="text-lg text-slate-800">{score}</strong>
+            </div>
+            <span className="mt-2.5 block h-[3px] overflow-hidden rounded bg-slate-200">
+              <i className="block h-full rounded bg-blue-600" style={{ width: `${score}%` }} />
+            </span>
+          </article>
+        ))}
+      </section>
+
+      <section className={sectionClass}>
+        <div className="mb-4 flex items-end justify-between gap-5 max-sm:items-start max-sm:flex-col">
+          <div>
+            <p className={eyebrowClass}>Measured market size</p>
+            <h2 className="mt-1 text-base font-medium text-slate-800">Scale and demand indicators</h2>
+          </div>
+          <span className="text-[10px] text-slate-400">Data period · {report.report.data_period}</span>
+        </div>
+        <div className="grid grid-cols-3 gap-3 max-sm:grid-cols-1">
+          {overview.market_size.metrics.map((metric) => (
+            <MarketMetricCard key={metric.id} metric={metric} onEvidence={onOpenEvidence} />
+          ))}
+        </div>
+      </section>
+
+      <section className="mt-4 grid grid-cols-[minmax(0,1.7fr)_minmax(260px,.8fr)] gap-4 max-sm:grid-cols-1">
+        <article className={`${cardClass} p-5`}>
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <span className={eyebrowClass}>Demand trend</span>
+              <h2 className="mt-1 text-base font-medium text-slate-800">Search momentum</h2>
+            </div>
+            <StatusPill tone="green">
+              {titleCase(overview.momentum.direction)} · {overview.momentum.strength}
+            </StatusPill>
+          </div>
+          <MomentumChart points={overview.momentum.series} />
+          <p className="mt-3.5 border-t border-slate-100 pt-3 text-xs leading-relaxed text-slate-600">
+            {overview.momentum.summary}
+          </p>
+        </article>
+        <article className={`${cardClass} p-5`}>
+          <span className={eyebrowClass}>Corroborating indicators</span>
+          <h2 className="mt-1 mb-4 text-base font-medium text-slate-800">Momentum signals</h2>
+          <div className="flex flex-col">
+            {overview.momentum.signals.map((signal) => (
+              <div
+                className="grid grid-cols-[minmax(0,1fr)_auto_34px] items-center gap-2.5 border-t border-slate-100 py-3"
+                key={signal.label}
+              >
+                <span className="flex min-w-0 flex-col">
+                  <strong className="text-[13px] text-slate-800">{signal.label}</strong>
+                  <small className="text-[9px] text-slate-400">{signal.source_ids.length} sources</small>
+                </span>
+                <strong className="text-[15px] text-emerald-700">
+                  {signal.change >= 0 ? '+' : ''}
+                  {signal.change}%
+                </strong>
+                <small className="text-[9px] text-slate-400">{signal.period}</small>
+              </div>
+            ))}
+          </div>
+        </article>
+      </section>
+
+      <section className={sectionClass}>
+        <div className="mb-4">
+          <div>
+            <p className={eyebrowClass}>Customer structure</p>
+            <h2 className="mt-1 text-base font-medium text-slate-800">Segments, jobs and pain points</h2>
+          </div>
+        </div>
+        <div className="grid grid-cols-3 gap-3 max-[1100px]:grid-cols-1">
+          {overview.customer_segments.map((segment) => (
+            <article className={`${cardClass} p-4`} key={segment.id}>
+              <div className="flex items-center gap-2.5">
+                <span className="grid size-9 shrink-0 place-items-center rounded-md bg-blue-50 text-blue-600">
+                  <Users size={16} />
+                </span>
+                <div>
+                  <h3 className="text-sm leading-snug text-slate-800">{segment.name}</h3>
+                  <small className="text-[11px] text-slate-400">{segment.confidence}% confidence</small>
+                </div>
+              </div>
+              <div className="mt-4 grid grid-cols-2 gap-3.5 max-sm:grid-cols-1">
+                <div className="flex flex-col gap-1.5">
+                  <strong className="mb-0.5 text-[11px] text-slate-500 uppercase">Jobs</strong>
+                  {segment.jobs.map((job) => (
+                    <span className="text-[13px] leading-snug text-slate-600" key={job}>
+                      {job}
+                    </span>
+                  ))}
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <strong className="mb-0.5 text-[11px] text-slate-500 uppercase">Pain points</strong>
+                  {segment.pain_points.map((pain) => (
+                    <span className="text-[13px] leading-snug text-slate-600" key={pain}>
+                      {pain}
+                    </span>
+                  ))}
+                </div>
+              </div>
+              <div className="mt-4 flex items-center justify-between gap-2 border-t border-slate-100 pt-2.5 text-[13px] text-slate-500">
+                <span>
+                  Willingness to pay ·{' '}
+                  <strong className="text-slate-700 capitalize">{segment.willingness_to_pay}</strong>
+                </span>
+                <EvidenceButton sourceIds={segment.source_ids} onOpen={onOpenEvidence} />
+              </div>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      <section className="mt-4 grid grid-cols-2 gap-4 max-sm:grid-cols-1">
+        <article className={`${cardClass} relative p-[18px]`}>
+          <div className="absolute top-4 right-4 grid size-[34px] place-items-center rounded-md bg-blue-50 text-blue-600">
+            <CircleDollarSign size={18} />
+          </div>
+          <span className={eyebrowClass}>Commercial dynamics</span>
+          <h2 className="mt-1.5 mr-12 text-[17px] font-medium">{overview.commercial_dynamics.dominant_model}</h2>
+          <p className="my-3 text-sm leading-relaxed text-slate-500">{overview.commercial_dynamics.summary}</p>
+          <dl className="mb-3 grid grid-cols-3 gap-2 max-sm:grid-cols-1">
+            <div className="border-l-2 border-slate-200 pl-2">
+              <dt className="text-[10px] text-slate-400">Typical annual price</dt>
+              <dd className="mt-1 text-sm font-bold text-slate-700">
+                {price ? `$${price.min}–$${price.max}` : 'Unknown'}
+              </dd>
+            </div>
+            <div className="border-l-2 border-slate-200 pl-2">
+              <dt className="text-[10px] text-slate-400">Willingness to pay</dt>
+              <dd className="mt-1 text-sm font-bold text-slate-700 capitalize">
+                {overview.commercial_dynamics.willingness_to_pay}
+              </dd>
+            </div>
+            <div className="border-l-2 border-slate-200 pl-2">
+              <dt className="text-[10px] text-slate-400">Retention pressure</dt>
+              <dd className="mt-1 text-sm font-bold text-slate-700 capitalize">
+                {overview.commercial_dynamics.retention_pressure}
+              </dd>
+            </div>
+          </dl>
+          <EvidenceButton sourceIds={overview.commercial_dynamics.source_ids} onOpen={onOpenEvidence} />
+        </article>
+        <article className={`${cardClass} relative p-[18px]`}>
+          <div className="absolute top-4 right-4 grid size-[34px] place-items-center rounded-md bg-emerald-50 text-emerald-700">
+            <Compass size={18} />
+          </div>
+          <span className={eyebrowClass}>Market accessibility</span>
+          <div className="flex items-baseline gap-2.5">
+            <h2 className="mt-1.5 text-[17px] font-medium">{titleCase(overview.market_accessibility.level)}</h2>
+            <span className="text-[11px] text-slate-400">{overview.market_accessibility.confidence}% confidence</span>
+          </div>
+          <p className="my-3 text-sm leading-relaxed text-slate-500">{overview.market_accessibility.summary}</p>
+          <div className="mb-3 grid grid-cols-2 gap-[18px] max-sm:grid-cols-1">
+            <div className="flex flex-col gap-1.5">
+              <strong className="mb-0.5 text-[11px] text-slate-500 uppercase">Channels</strong>
+              {overview.market_accessibility.channels.map((item) => (
+                <span className="text-[13px] text-slate-600" key={item}>
+                  {item}
+                </span>
+              ))}
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <strong className="mb-0.5 text-[11px] text-slate-500 uppercase">Barriers</strong>
+              {overview.market_accessibility.barriers.map((item) => (
+                <span className="text-[13px] text-slate-600" key={item}>
+                  {item}
+                </span>
+              ))}
+            </div>
+          </div>
+          <EvidenceButton sourceIds={overview.market_accessibility.source_ids} onOpen={onOpenEvidence} />
+        </article>
+      </section>
+
+      <section className={sectionClass}>
+        <div className="mb-4">
+          <div>
+            <p className={eyebrowClass}>Risk register</p>
+            <h2 className="mt-1 text-base font-medium text-slate-800">Structural market risks</h2>
+          </div>
+        </div>
+        <div className="grid grid-cols-3 gap-3 max-[1100px]:grid-cols-1">
+          {overview.risks.map((risk) => (
+            <article className={`${cardClass} p-4`} key={risk.id}>
+              <div className="mb-3 flex items-center gap-2 text-amber-700">
+                <ShieldAlert size={17} />
+                <span className="text-[11px] font-bold text-slate-500 uppercase">{risk.category}</span>
+              </div>
+              <h3 className="text-sm leading-snug text-slate-800">{risk.title}</h3>
+              <p className="mt-2 min-h-12 text-sm leading-relaxed text-slate-500 max-[1100px]:min-h-0">
+                {risk.summary}
+              </p>
+              <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-slate-100 pt-2.5 text-[13px] text-slate-500">
+                <StatusPill tone={levelTone(risk.probability)}>Probability · {risk.probability}</StatusPill>
+                <StatusPill tone={levelTone(risk.impact)}>Impact · {risk.impact}</StatusPill>
+                <span className="ml-auto">
+                  <EvidenceButton sourceIds={risk.source_ids} onOpen={onOpenEvidence} />
+                </span>
+              </div>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      <section className={sectionClass}>
+        <div className="mb-4 flex items-end justify-between gap-5">
+          <div>
+            <p className={eyebrowClass}>Opportunity map</p>
+            <h2 className="mt-1 text-base font-medium text-slate-800">Evidence-backed unmet needs</h2>
+          </div>
+          <span className="text-[10px] text-slate-400">{overview.opportunity_gaps.length} identified gaps</span>
+        </div>
+        <div className="grid grid-cols-3 gap-3 max-[1100px]:grid-cols-1">
+          {overview.opportunity_gaps.map((gap) => (
+            <article className={`${cardClass} p-4`} key={gap.id}>
+              <div className="mb-3 flex items-center justify-between gap-2">
+                <span className="text-[11px] font-bold text-slate-500 uppercase">{gap.segment}</span>
+                <strong className="text-[17px] text-blue-600">{gap.confidence}%</strong>
+              </div>
+              <h3 className="min-h-[52px] text-sm leading-snug text-slate-800 max-[1100px]:min-h-0">
+                {gap.unmet_need}
+              </h3>
+              <dl className="mt-3.5 grid grid-cols-3 gap-1.5">
+                <div className="min-w-0 border-l-2 border-slate-200 pl-2">
+                  <dt className="text-[10px] text-slate-400">Demand</dt>
+                  <dd className="mt-1 text-[13px] font-bold text-slate-700 capitalize">{gap.demand_strength}</dd>
+                </div>
+                <div className="min-w-0 border-l-2 border-slate-200 pl-2">
+                  <dt className="text-[10px] text-slate-400">Competitor coverage</dt>
+                  <dd className="mt-1 text-[13px] font-bold text-slate-700 capitalize">{gap.competitor_coverage}</dd>
+                </div>
+                <div className="min-w-0 border-l-2 border-slate-200 pl-2">
+                  <dt className="text-[10px] text-slate-400">Commercial signal</dt>
+                  <dd className="mt-1 text-[13px] font-bold text-slate-700 capitalize">{gap.commercial_signal}</dd>
+                </div>
+              </dl>
+              <div className="mt-4 flex items-center justify-between gap-2 border-t border-slate-100 pt-2.5 text-[13px] text-slate-500">
+                <span className="inline-flex items-center gap-1.5">
+                  <Gauge size={14} /> Confidence
+                </span>
+                <EvidenceButton sourceIds={gap.source_ids} onOpen={onOpenEvidence} />
+              </div>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      <section
+        className="mt-[18px] flex items-center gap-[22px] border-t border-slate-200 px-0.5 pt-4 text-[13px] text-slate-500 max-sm:flex-col max-sm:items-start max-sm:gap-2"
+        aria-label="Market facts"
+      >
+        <span className="inline-flex items-center gap-1.5">
+          <BarChart3 size={15} /> {competitors.summary.tracked_products} tracked products
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <ArrowUpRight size={15} /> {titleCase(competitors.summary.market_structure)} market
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <Database size={15} /> {report.evidence.length} evidence sources
+        </span>
+      </section>
+    </>
+  )
 }
