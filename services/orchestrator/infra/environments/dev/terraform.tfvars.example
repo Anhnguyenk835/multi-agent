@@ -5,8 +5,8 @@ image = "asia-southeast1-docker.pkg.dev/replace-with-your-gcp-project-id/orchest
 
 # Fill these in with the `url` output from each downstream service's own
 # `terraform apply`, run first.
-researcher_url    = "https://researcher-xxxxxxxxxx.asia-southeast1.run.app"
-market_agent_url  = "https://market-agent-xxxxxxxxxx.asia-southeast1.run.app"
+market_analyst_url    = "https://market-analyst-xxxxxxxxxx.asia-southeast1.run.app"
+competitor_analyst_url  = "https://competitor-analyst-xxxxxxxxxx.asia-southeast1.run.app"
 analyst_url        = "https://analyst-xxxxxxxxxx.asia-southeast1.run.app"
 writer_url         = "https://writer-xxxxxxxxxx.asia-southeast1.run.app"
 

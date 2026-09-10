@@ -1,15 +1,15 @@
 # Orchestrator
 
-LangGraph control plane that fans a query out to Researcher and Market
-Agent, joins their results, then runs Analyst → Writer. Owns no agent logic
+LangGraph control plane that fans a query out to Market Analyst and Competitor
+Analyst, joins their results, then runs Analyst → Writer. Owns no agent logic
 and calls no AI provider — pure coordination over each service's contract.
 
 ## Architecture
 
 ```mermaid
 flowchart LR
-    Q([Query]) --> R[Researcher<br/>RemoteGraph]
-    Q --> M[Market Agent<br/>gRPC]
+    Q([Query]) --> R[Market Analyst<br/>RemoteGraph]
+    Q --> M[Competitor Analyst<br/>gRPC]
     R --> J{Join}
     M --> J
     J -->|both failed| F([failed])
@@ -39,7 +39,7 @@ flowchart LR
 
 ## Configuration
 
-`RESEARCHER_URL`, `MARKET_AGENT_ADDRESS`, `ANALYST_URL`, `WRITER_URL`,
+`MARKET_ANALYST_URL`, `COMPETITOR_ANALYST_ADDRESS`, `ANALYST_URL`, `WRITER_URL`,
 `CHECKPOINT_DATABASE_URL`, and per-agent
 `<AGENT>_TIMEOUT_SECONDS`/`_MAX_ATTEMPTS`/`_BACKOFF_SECONDS` — see
 `config.py` for defaults.

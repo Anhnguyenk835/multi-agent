@@ -1,14 +1,14 @@
 import { MoreHorizontal } from 'lucide-react'
 import { Link, NavLink } from 'react-router-dom'
 import { BrandMark, IconButton } from '../../../components/ui'
-import type { MarketAnalysisResponse } from '../types'
+import type { MarketSummary } from '../types'
 
 export function DashboardSidebar({
-  reports,
+  markets,
   mobileOpen,
   onClose,
 }: {
-  reports: MarketAnalysisResponse[]
+  markets: MarketSummary[]
   mobileOpen: boolean
   onClose: () => void
 }) {
@@ -25,7 +25,7 @@ export function DashboardSidebar({
       </Link>
       <nav className="mt-7" aria-label="Dashboard navigation">
         <p className="mx-2 mb-2 text-[10px] font-bold text-slate-400 uppercase">Markets</p>
-        {reports.map(({ market, overview }) => (
+        {markets.map((market) => (
           <NavLink key={market.id} to={`/markets/${market.id}`} onClick={onClose}>
             {({ isActive }) => (
               <span
@@ -36,7 +36,7 @@ export function DashboardSidebar({
                 <small
                   className={`min-w-6 rounded-full px-1.5 py-0.5 text-center text-[9px] ${isActive ? 'bg-blue-100 text-blue-700' : 'bg-slate-200 text-slate-500'}`}
                 >
-                  {overview.scorecard.momentum}
+                  {market.momentum_score}
                 </small>
               </span>
             )}

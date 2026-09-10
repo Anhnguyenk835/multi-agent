@@ -1,4 +1,4 @@
-export type AgentId = 'researcher' | 'market' | 'analyst' | 'writer'
+export type AgentId = 'market_analyst' | 'competitor_analyst' | 'analyst' | 'writer'
 
 export interface Citation {
   title: string

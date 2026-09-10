@@ -1,15 +1,15 @@
 from orchestrator.clients.bundle import OrchestratorClients
 from orchestrator.clients.protocols import (
     AnalystClientProtocol,
-    MarketClientProtocol,
-    ResearcherClientProtocol,
+    CompetitorAnalystClientProtocol,
+    MarketAnalystClientProtocol,
     WriterClientProtocol,
 )
 
 __all__ = [
     "AnalystClientProtocol",
-    "MarketClientProtocol",
+    "CompetitorAnalystClientProtocol",
+    "MarketAnalystClientProtocol",
     "OrchestratorClients",
-    "ResearcherClientProtocol",
     "WriterClientProtocol",
 ]

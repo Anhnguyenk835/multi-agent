@@ -83,7 +83,7 @@ class Finding(ContractModel):
     source: Source
 
 
-class MarketSignal(ContractModel):
+class CompetitiveSignal(ContractModel):
     topic: NonEmptyText
     observation: NonEmptyText
     source: Source

@@ -1,8 +1,7 @@
 import { Bell, Menu } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
 import { IconButton, SearchField } from '../../../components/ui'
-import { marketAnalysisReports } from '../data'
-import type { MarketAnalysisResponse } from '../types'
+import type { MarketSummary } from '../types'
 import { DashboardSidebar } from './DashboardSidebar'
 
 interface DashboardShellProps {
@@ -11,7 +10,7 @@ interface DashboardShellProps {
   searchQuery: string
   onSearchChange: (value: string) => void
   action?: ReactNode
-  reports?: MarketAnalysisResponse[]
+  markets: MarketSummary[]
   children: ReactNode
 }
 
@@ -21,13 +20,13 @@ export function DashboardShell({
   searchQuery,
   onSearchChange,
   action,
-  reports = marketAnalysisReports,
+  markets,
   children,
 }: DashboardShellProps) {
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
   return (
     <div className="flex min-h-screen w-full overflow-x-hidden bg-[#f4f6f9] text-slate-900">
-      <DashboardSidebar reports={reports} mobileOpen={mobileNavOpen} onClose={() => setMobileNavOpen(false)} />
+      <DashboardSidebar markets={markets} mobileOpen={mobileNavOpen} onClose={() => setMobileNavOpen(false)} />
       {mobileNavOpen && (
         <button
           className="fixed inset-0 z-20 bg-slate-950/30 md:hidden"

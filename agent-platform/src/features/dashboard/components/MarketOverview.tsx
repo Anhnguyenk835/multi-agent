@@ -10,12 +10,13 @@ import {
   TrendingUp,
   Users,
 } from 'lucide-react'
-import type { MarketAnalysisResponse, MarketMetric, QualitativeLevel, TrendPoint } from '../types'
+import { useState } from 'react'
+import type { MarketAnalysisResponse, MarketMetric, QualitativeLevel, RevenueTrendPoint } from '../types'
 import { StatusPill } from './DashboardPrimitives'
 
 const sectionClass = 'mt-9'
 const cardClass = 'min-w-0 rounded-lg border border-slate-200 bg-white'
-const eyebrowClass = 'text-[11px] font-bold text-slate-400 uppercase'
+const eyebrowClass = 'text-[14px] font-bold text-slate-400 uppercase'
 const evidenceButtonClass =
   'inline-flex items-center gap-1.5 bg-transparent py-1 text-[13px] font-bold text-blue-700 hover:text-blue-600'
 
@@ -70,7 +71,7 @@ function MarketMetricCard({ metric, onEvidence }: { metric: MarketMetric; onEvid
   return (
     <article className={`${cardClass} p-4`}>
       <div className="flex items-center justify-between gap-2">
-        <span className="text-xs font-semibold text-slate-600">{metric.label}</span>
+        <span className="text-sm font-semibold text-slate-600">{metric.label}</span>
         <StatusPill tone="neutral">{metric.evidence_class}</StatusPill>
       </div>
       <strong className="mt-3.5 block text-[26px] leading-none text-slate-900 max-sm:text-[21px]">
@@ -96,21 +97,39 @@ function MarketMetricCard({ metric, onEvidence }: { metric: MarketMetric; onEvid
   )
 }
 
-function MomentumChart({ points }: { points: TrendPoint[] }) {
-  const values = points.map((point) => point.search_index ?? 0)
+type TrendMode = 'revenue' | 'growth'
+
+function formatGrowth(value: number) {
+  return `${value >= 0 ? '+' : ''}${value.toFixed(1)}%`
+}
+
+function MarketTrendChart({ points, mode }: { points: RevenueTrendPoint[]; mode: TrendMode }) {
+  const chartPoints =
+    mode === 'revenue'
+      ? points
+      : points.slice(1).map((point, index) => ({
+          ...point,
+          value: ((point.value - points[index]!.value) / points[index]!.value) * 100,
+        }))
+  const values = chartPoints.map((point) => point.value)
   const max = Math.max(...values, 1)
   const min = Math.min(...values)
   const range = Math.max(max - min, 1)
   const coordinates = values
     .map((value, index) => {
-      const x = points.length === 1 ? 340 : (index / (points.length - 1)) * 680
+      const x = chartPoints.length === 1 ? 340 : (index / (chartPoints.length - 1)) * 680
       const y = 112 - ((value - min) / range) * 92
       return `${x},${y}`
     })
     .join(' ')
 
   return (
-    <div className="mt-5" aria-label="Search demand index over the available periods">
+    <div
+      className="mt-5"
+      aria-label={
+        mode === 'revenue' ? 'Estimated market revenue over the available years' : 'Market revenue growth rate'
+      }
+    >
       <div className="relative h-[150px] bg-[repeating-linear-gradient(to_bottom,transparent_0,transparent_41px,#edf0f4_42px)]">
         <svg
           className="relative z-1 h-32 w-full overflow-visible"
@@ -118,7 +137,7 @@ function MomentumChart({ points }: { points: TrendPoint[] }) {
           preserveAspectRatio="none"
           role="img"
         >
-          <title>Search demand index</title>
+          <title>{mode === 'revenue' ? 'Estimated market revenue by year' : 'Market revenue growth by year'}</title>
           <polyline
             points={coordinates}
             fill="none"
@@ -127,21 +146,31 @@ function MomentumChart({ points }: { points: TrendPoint[] }) {
             vectorEffect="non-scaling-stroke"
           />
           {values.map((value, index) => {
-            const x = points.length === 1 ? 340 : (index / (points.length - 1)) * 680
+            const x = chartPoints.length === 1 ? 340 : (index / (chartPoints.length - 1)) * 680
             const y = 112 - ((value - min) / range) * 92
             return (
-              <circle key={points[index]?.period} cx={x} cy={y} r="4" fill="#fff" stroke="#1463ff" strokeWidth="3" />
+              <circle
+                key={chartPoints[index]?.period}
+                cx={x}
+                cy={y}
+                r="4"
+                fill="#fff"
+                stroke="#1463ff"
+                strokeWidth="3"
+              />
             )
           })}
         </svg>
       </div>
       <div className="-mt-0.5 flex justify-between gap-2.5">
-        {points.map((point, index) => (
+        {chartPoints.map((point, index) => (
           <span
             className={`flex flex-col text-[9px] text-slate-400 ${index === 1 ? 'items-center' : index === points.length - 1 ? 'items-end' : ''}`}
             key={point.period}
           >
-            <strong className="text-xs text-slate-700">{point.search_index ?? 'N/A'}</strong>
+            <strong className="text-xs text-slate-700">
+              {mode === 'revenue' ? compactNumber(point.value, point.unit) : formatGrowth(point.value)}
+            </strong>
             <small>{point.period}</small>
           </span>
         ))}
@@ -159,6 +188,7 @@ export function MarketOverview({
 }) {
   const { overview, competitors } = report
   const price = overview.commercial_dynamics.typical_annual_price
+  const [trendMode, setTrendMode] = useState<TrendMode>('revenue')
 
   return (
     <>
@@ -234,16 +264,44 @@ export function MarketOverview({
         <article className={`${cardClass} p-5`}>
           <div className="flex items-start justify-between gap-4">
             <div>
-              <span className={eyebrowClass}>Demand trend</span>
-              <h2 className="mt-1 text-base font-medium text-slate-800">Search momentum</h2>
+              <span className={eyebrowClass}>Market revenue trend</span>
+              <h2 className="mt-1 text-base font-medium text-slate-800">
+                {trendMode === 'revenue' ? 'Estimated annual revenue' : 'Annual market growth'}
+              </h2>
             </div>
-            <StatusPill tone="green">
-              {titleCase(overview.momentum.direction)} · {overview.momentum.strength}
-            </StatusPill>
+            <div className="flex flex-col items-end gap-2 max-sm:items-start">
+              <StatusPill tone="green">
+                {titleCase(overview.momentum.direction)} · {overview.momentum.strength}
+              </StatusPill>
+              <div
+                className="inline-flex rounded-md border border-slate-200 bg-slate-50 p-0.5"
+                role="group"
+                aria-label="Market trend chart mode"
+              >
+                <button
+                  className={`rounded px-2.5 py-1 text-[11px] font-semibold transition-colors ${trendMode === 'revenue' ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                  onClick={() => setTrendMode('revenue')}
+                  type="button"
+                  aria-pressed={trendMode === 'revenue'}
+                >
+                  Revenue
+                </button>
+                <button
+                  className={`rounded px-2.5 py-1 text-[11px] font-semibold transition-colors ${trendMode === 'growth' ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                  onClick={() => setTrendMode('growth')}
+                  type="button"
+                  aria-pressed={trendMode === 'growth'}
+                >
+                  Market growth
+                </button>
+              </div>
+            </div>
           </div>
-          <MomentumChart points={overview.momentum.series} />
+          <MarketTrendChart points={overview.market_size.revenue_history} mode={trendMode} />
           <p className="mt-3.5 border-t border-slate-100 pt-3 text-xs leading-relaxed text-slate-600">
-            {overview.momentum.summary}
+            {trendMode === 'revenue'
+              ? overview.momentum.summary
+              : 'Growth is calculated from the estimated market revenue at consecutive yearly data points.'}
           </p>
         </article>
         <article className={`${cardClass} p-5`}>
@@ -274,7 +332,7 @@ export function MarketOverview({
         <div className="mb-4">
           <div>
             <p className={eyebrowClass}>Customer structure</p>
-            <h2 className="mt-1 text-base font-medium text-slate-800">Segments, jobs and pain points</h2>
+            <h2 className="mt-1 text-base font-medium text-slate-800">Target Segments, jobs and pain points</h2>
           </div>
         </div>
         <div className="grid grid-cols-3 gap-3 max-[1100px]:grid-cols-1">

@@ -70,7 +70,7 @@ resource "google_secret_manager_secret_iam_member" "checkpoint_database_url_acce
 locals {
   # Cloud Run always terminates TLS at its ingress, so the gRPC address the
   # orchestrator dials must drop the https:// scheme and use the TLS port.
-  market_agent_address = "${replace(var.market_agent_url, "https://", "")}:443"
+  competitor_analyst_address = "${replace(var.competitor_analyst_url, "https://", "")}:443"
 }
 
 module "cloud_run" {
@@ -87,9 +87,9 @@ module "cloud_run" {
   allow_public_access = true
 
   env_vars = {
-    RESEARCHER_URL               = var.researcher_url
-    MARKET_AGENT_ADDRESS         = local.market_agent_address
-    MARKET_AGENT_USE_TLS         = "true"
+    MARKET_ANALYST_URL               = var.market_analyst_url
+    COMPETITOR_ANALYST_ADDRESS         = local.competitor_analyst_address
+    COMPETITOR_ANALYST_USE_TLS         = "true"
     ANALYST_URL                  = var.analyst_url
     WRITER_URL                   = var.writer_url
     ORCHESTRATOR_ALLOWED_ORIGINS = var.allowed_origins

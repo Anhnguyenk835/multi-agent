@@ -1,0 +1,8 @@
+{
+  "$schema": "https://langgra.ph/schema.json",
+  "dependencies": ["."],
+  "graphs": {
+    "market_analyst": "./src/market_analyst/graph.py:build_graph",
+    "market_report_analyst": "./src/market_analyst/market_graph.py:build_market_graph"
+  }
+}

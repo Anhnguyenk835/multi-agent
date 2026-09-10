@@ -1,7 +1,7 @@
 # Analyst
 
-LangChain HTTPS service that synthesizes Researcher's findings and Market
-Agent's signals into a detailed markdown analysis.
+LangChain HTTPS service that synthesizes Market Analyst findings and Competitor
+Analyst signals into a detailed markdown analysis.
 
 ## Architecture
 
@@ -13,7 +13,7 @@ flowchart LR
 
 - Uses its own `analyst.llm_client.generate_structured`, prompted
   only from the request's own validated fields — including each source's
-  full page text (`Source.content`), not just Researcher/Market's one-line
+  full page text (`Source.content`), not just the upstream analysts' one-line
   claim/observation. The prompt asks for a thorough, uncapped markdown
   writeup (themes/insights/risks as prose), not a fixed number of bullets.
 - Citation is by construction, not validation: the prompt shows a numbered

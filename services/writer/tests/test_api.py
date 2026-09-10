@@ -80,11 +80,11 @@ def test_writer_prompt_never_includes_raw_research_fields() -> None:
     from writer.prompts import build_user_prompt
 
     assert "research_findings" not in WriterRequest.model_fields
-    assert "market_signals" not in WriterRequest.model_fields
+    assert "competitive_signals" not in WriterRequest.model_fields
     assert "content" not in Citation.model_fields
 
     request = WriterRequest.model_validate(request_payload())
     prompt = build_user_prompt(request)
 
     assert "research_findings" not in prompt
-    assert "market_signals" not in prompt
+    assert "competitive_signals" not in prompt

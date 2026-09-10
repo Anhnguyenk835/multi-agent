@@ -14,14 +14,14 @@ variable "image" {
   description = "Full image reference for the orchestrator container, e.g. REGION-docker.pkg.dev/PROJECT/orchestrator/orchestrator:TAG."
 }
 
-variable "researcher_url" {
+variable "market_analyst_url" {
   type        = string
-  description = "Cloud Run URL of the deployed researcher service (output of its own `terraform apply`)."
+  description = "Cloud Run URL of the deployed Market Analyst service (output of its own `terraform apply`)."
 }
 
-variable "market_agent_url" {
+variable "competitor_analyst_url" {
   type        = string
-  description = "Cloud Run URL of the deployed market-agent service (output of its own `terraform apply`). The https:// scheme is stripped and :443 appended to form the gRPC-over-TLS address."
+  description = "Cloud Run URL of the deployed Competitor Analyst service (output of its own `terraform apply`). The https:// scheme is stripped and :443 appended to form the gRPC-over-TLS address."
 }
 
 variable "analyst_url" {

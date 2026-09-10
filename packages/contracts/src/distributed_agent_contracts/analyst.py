@@ -2,10 +2,10 @@ from pydantic import Field, model_validator
 
 from distributed_agent_contracts.common import (
     Citation,
+    CompetitiveSignal,
     ContractStatus,
     Finding,
     LongText,
-    MarketSignal,
     RequestMetadata,
     ResponseMetadata,
 )
@@ -14,12 +14,12 @@ from distributed_agent_contracts.common import (
 class AnalysisRequest(RequestMetadata):
     query: str = Field(min_length=1, max_length=2_000)
     research_findings: list[Finding] = Field(default_factory=list, max_length=20)
-    market_signals: list[MarketSignal] = Field(default_factory=list, max_length=20)
+    competitive_signals: list[CompetitiveSignal] = Field(default_factory=list, max_length=20)
     competitors: list[str] = Field(default_factory=list, max_length=50)
 
     @model_validator(mode="after")
     def validate_available_research(self) -> "AnalysisRequest":
-        if not self.research_findings and not self.market_signals:
+        if not self.research_findings and not self.competitive_signals:
             raise ValueError("analysis requires research findings or market signals")
         return self
 

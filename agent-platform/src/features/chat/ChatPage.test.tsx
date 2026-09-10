@@ -33,9 +33,9 @@ describe('Agent Platform streaming chat', () => {
       vi.fn().mockResolvedValue({
         ok: true,
         body: sse([
-          sseFrame('agent.activity', { agent: 'researcher', data: { message: 'Searching public sources' } }),
+          sseFrame('agent.activity', { agent: 'market_analyst', data: { message: 'Searching public sources' } }),
           sseFrame('research.source_found', {
-            agent: 'researcher',
+            agent: 'market_analyst',
             data: { title: 'Primary source', publisher: 'Example', url: 'https://example.com/source' },
           }),
           sseFrame('writer.delta', { agent: 'writer', data: { text: 'Drafting summary' } }),

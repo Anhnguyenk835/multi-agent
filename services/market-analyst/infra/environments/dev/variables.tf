@@ -1,0 +1,20 @@
+variable "project_id" {
+  type        = string
+  description = "GCP project ID for the development environment."
+}
+
+variable "region" {
+  type        = string
+  description = "GCP region for regional resources."
+  default     = "asia-southeast1"
+}
+
+variable "image" {
+  type        = string
+  description = "Full image reference for the market-analyst container, e.g. REGION-docker.pkg.dev/PROJECT/market-analyst/market-analyst:TAG."
+}
+
+variable "llm_gateway_base_url" {
+  type        = string
+  description = "Private LiteLLM Proxy OpenAI-compatible base URL, including /v1."
+}

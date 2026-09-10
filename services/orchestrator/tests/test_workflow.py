@@ -10,7 +10,7 @@ from distributed_agent_contracts import (
     ContractStatus,
     ErrorCode,
     Finding,
-    ResearcherOutput,
+    MarketAnalystOutput,
     Source,
     WorkflowRequest,
     WriterResponse,
@@ -22,7 +22,7 @@ from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 from orchestrator import telemetry
 from orchestrator.clients import OrchestratorClients
-from orchestrator.clients.market import MarketAgentOutput
+from orchestrator.clients.competitor_analyst import CompetitorAnalystOutput
 from orchestrator.config import AgentPolicy, OrchestratorSettings
 from orchestrator.errors import AgentCallError, WorkflowConflictError
 from orchestrator.graph import build_workflow_graph
@@ -49,7 +49,7 @@ class ParallelGate:
         await asyncio.wait_for(self.ready.wait(), timeout=0.5)
 
 
-class FakeResearcher:
+class FakeMarketAnalyst:
     def __init__(self, error: AgentCallError | None = None, gate: ParallelGate | None = None):
         self.error = error
         self.gate = gate
@@ -61,20 +61,20 @@ class FakeResearcher:
             await self.gate.enter()
         if self.error:
             raise self.error
-        return ResearcherOutput(
+        return MarketAnalystOutput(
             **copy_request_metadata(request),
             status=ContractStatus.SUCCESS,
             findings=[
                 Finding(
                     title="Research sample",
                     claim="Teams require measurable productivity.",
-                    source=_source("research"),
+                    source=_source("market_analysis"),
                 )
             ],
         )
 
 
-class FlakyResearcher(FakeResearcher):
+class FlakyMarketAnalyst(FakeMarketAnalyst):
     async def analyze(self, request):
         self.requests.append(request)
         if request.attempt < 3:
@@ -83,20 +83,20 @@ class FlakyResearcher(FakeResearcher):
                 "transient",
                 retryable=True,
             )
-        return ResearcherOutput(
+        return MarketAnalystOutput(
             **copy_request_metadata(request),
             status=ContractStatus.SUCCESS,
             findings=[
                 Finding(
                     title="Research sample",
                     claim="Teams require measurable productivity.",
-                    source=_source("research"),
+                    source=_source("market_analysis"),
                 )
             ],
         )
 
 
-class FakeMarket:
+class FakeCompetitorAnalyst:
     def __init__(self, error: AgentCallError | None = None, gate: ParallelGate | None = None):
         self.error = error
         self.gate = gate
@@ -108,13 +108,13 @@ class FakeMarket:
             await self.gate.enter()
         if self.error:
             raise self.error
-        return MarketAgentOutput(
+        return CompetitorAnalystOutput(
             status=ContractStatus.SUCCESS,
-            market_signals=[
+            competitive_signals=[
                 {
                     "topic": "Governance",
                     "observation": "Enterprises require auditability.",
-                    "source": _source("market"),
+                    "source": _source("competitor_analyst"),
                 }
             ],
             competitors=["Example Competitor"],
@@ -135,7 +135,7 @@ class FakeAnalyst:
             **copy_request_metadata(request),
             status=ContractStatus.SUCCESS,
             content="## Insights\n\n- Measure outcomes. [1]",
-            citations=[_citation("research")],
+            citations=[_citation("market_analysis")],
         )
 
 
@@ -179,21 +179,21 @@ def _failure(message: str = "injected failure") -> AgentCallError:
 
 def _service(
     *,
-    research_error: AgentCallError | None = None,
-    market_error: AgentCallError | None = None,
+    market_analysis_error: AgentCallError | None = None,
+    competitor_analysis_error: AgentCallError | None = None,
     analyst_error: AgentCallError | None = None,
     writer_error: AgentCallError | None = None,
     gate: ParallelGate | None = None,
 ):
-    researcher = FakeResearcher(research_error, gate)
-    market = FakeMarket(market_error, gate)
+    market_analyst = FakeMarketAnalyst(market_analysis_error, gate)
+    competitor_analyst = FakeCompetitorAnalyst(competitor_analysis_error, gate)
     analyst = FakeAnalyst(analyst_error)
     writer = FakeWriter(writer_error)
-    clients = OrchestratorClients(researcher, market, analyst, writer)
+    clients = OrchestratorClients(market_analyst, competitor_analyst, analyst, writer)
     policy = AgentPolicy(timeout_seconds=1, max_attempts=1, backoff_seconds=0)
     settings = OrchestratorSettings(
-        researcher_policy=policy,
-        market_policy=policy,
+        market_analyst_policy=policy,
+        competitor_analyst_policy=policy,
         analyst_policy=policy,
         writer_policy=policy,
     )
@@ -201,7 +201,7 @@ def _service(
         WorkflowNodes(clients, settings),
         InMemorySaver(),
     )
-    return WorkflowService(graph), researcher, market, analyst, writer
+    return WorkflowService(graph), market_analyst, competitor_analyst, analyst, writer
 
 
 def _request(request_id=None, query: str = "AI coding assistants") -> WorkflowRequest:
@@ -215,7 +215,7 @@ def _request(request_id=None, query: str = "AI coding assistants") -> WorkflowRe
 @pytest.mark.anyio
 async def test_happy_path_fans_out_concurrently_and_is_idempotent() -> None:
     gate = ParallelGate()
-    service, researcher, market, analyst, writer = _service(gate=gate)
+    service, market_analyst, competitor_analyst, analyst, writer = _service(gate=gate)
     request = _request()
 
     first = await service.run(request)
@@ -224,11 +224,11 @@ async def test_happy_path_fans_out_concurrently_and_is_idempotent() -> None:
     assert first.status is ContractStatus.SUCCESS
     assert second == first
     assert gate.count == 2
-    assert len(researcher.requests) == len(market.requests) == 1
+    assert len(market_analyst.requests) == len(competitor_analyst.requests) == 1
     assert len(analyst.requests) == len(writer.requests) == 1
     child_requests = [
-        researcher.requests[0],
-        market.requests[0],
+        market_analyst.requests[0],
+        competitor_analyst.requests[0],
         analyst.requests[0],
         writer.requests[0],
     ]
@@ -249,16 +249,18 @@ async def test_agent_call_span_records_contract_input_and_output(monkeypatch) ->
 
     await service.run(_request(query="AI agent market in 2026"))
 
-    market_span = next(
-        span for span in exporter.get_finished_spans() if span.name == "agent.call market"
+    competitor_span = next(
+        span
+        for span in exporter.get_finished_spans()
+        if span.name == "agent.call competitor_analyst"
     )
-    input_value = json.loads(market_span.attributes["langfuse.observation.input"])
-    output_value = json.loads(market_span.attributes["langfuse.observation.output"])
+    input_value = json.loads(competitor_span.attributes["langfuse.observation.input"])
+    output_value = json.loads(competitor_span.attributes["langfuse.observation.output"])
     assert input_value["query"] == "AI agent market in 2026"
     assert input_value["attempt"] == 1
     assert output_value["status"] == "success"
-    assert output_value["market_signals"]
-    assert "langfuse.trace.input" not in market_span.attributes
+    assert output_value["competitive_signals"]
+    assert "langfuse.trace.input" not in competitor_span.attributes
 
 
 @pytest.mark.anyio
@@ -277,15 +279,15 @@ async def test_stream_emits_safe_agent_progress_sources_and_terminal_response() 
     search = next(event for event in events if event["type"] == "research.search.started")
     assert "sk-this" not in search["data"]["query_preview"]
     source = next(event for event in events if event["type"] == "research.source_found")
-    assert source["data"]["url"] == "https://example.com/research"
+    assert source["data"]["url"] == "https://example.com/market_analysis"
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize("failed_branch", ["research", "market"])
+@pytest.mark.parametrize("failed_branch", ["market_analysis", "competitor_analyst"])
 async def test_one_upstream_failure_produces_degraded_brief(failed_branch: str) -> None:
     service, _, _, analyst, writer = _service(
-        research_error=_failure() if failed_branch == "research" else None,
-        market_error=_failure() if failed_branch == "market" else None,
+        market_analysis_error=_failure() if failed_branch == "market_analysis" else None,
+        competitor_analysis_error=(_failure() if failed_branch == "competitor_analyst" else None),
     )
 
     response = await service.run(_request())
@@ -300,8 +302,8 @@ async def test_one_upstream_failure_produces_degraded_brief(failed_branch: str) 
 @pytest.mark.anyio
 async def test_both_upstreams_failed_stops_before_analyst() -> None:
     service, _, _, analyst, writer = _service(
-        research_error=_failure("research failed"),
-        market_error=_failure("market failed"),
+        market_analysis_error=_failure("market analysis failed"),
+        competitor_analysis_error=_failure("competitor analysis failed"),
     )
 
     response = await service.run(_request())
@@ -340,15 +342,15 @@ async def test_request_id_cannot_be_reused_for_different_query() -> None:
 
 @pytest.mark.anyio
 async def test_retry_attempt_is_propagated_to_agent_contract() -> None:
-    researcher = FlakyResearcher()
-    market = FakeMarket()
+    market_analyst = FlakyMarketAnalyst()
+    competitor_analyst = FakeCompetitorAnalyst()
     analyst = FakeAnalyst()
     writer = FakeWriter()
-    clients = OrchestratorClients(researcher, market, analyst, writer)
+    clients = OrchestratorClients(market_analyst, competitor_analyst, analyst, writer)
     retry_policy = AgentPolicy(timeout_seconds=1, max_attempts=3, backoff_seconds=0)
     settings = OrchestratorSettings(
-        researcher_policy=retry_policy,
-        market_policy=AgentPolicy(1, 1, 0),
+        market_analyst_policy=retry_policy,
+        competitor_analyst_policy=AgentPolicy(1, 1, 0),
         analyst_policy=AgentPolicy(1, 1, 0),
         writer_policy=AgentPolicy(1, 1, 0),
     )
@@ -359,9 +361,9 @@ async def test_retry_attempt_is_propagated_to_agent_contract() -> None:
     response = await service.run(_request())
 
     assert response.status is ContractStatus.SUCCESS
-    assert [request.attempt for request in researcher.requests] == [1, 2, 3]
-    assert all(request.deadline_at is not None for request in researcher.requests)
+    assert [request.attempt for request in market_analyst.requests] == [1, 2, 3]
+    assert all(request.deadline_at is not None for request in market_analyst.requests)
     assert all(
         0 < (request.deadline_at - datetime.now(UTC)).total_seconds() <= 1
-        for request in researcher.requests
+        for request in market_analyst.requests
     )

@@ -13,14 +13,17 @@ from distributed_agent_contracts import (
     ContractError,
     ContractStatus,
     ErrorCode,
-    ResearcherInput,
-    ResearcherOutput,
+    MarketAnalystInput,
+    MarketAnalystOutput,
     WriterRequest,
     WriterResponse,
 )
 
 from orchestrator.clients import OrchestratorClients
-from orchestrator.clients.market import MarketAgentOutput, MarketAgentRequest
+from orchestrator.clients.competitor_analyst import (
+    CompetitorAnalystOutput,
+    CompetitorAnalystRequest,
+)
 from orchestrator.config import AgentPolicy, OrchestratorSettings
 from orchestrator.errors import AgentCallError
 from orchestrator.retry import invoke_with_retry
@@ -83,59 +86,59 @@ class WorkflowNodes:
         self._settings = settings
         self._sleep = sleep
 
-    @_traced_node("call_researcher")
-    async def call_researcher(self, state: WorkflowState) -> dict[str, object]:
-        _emit(state, "agent.started", "researcher")
+    @_traced_node("call_market_analyst")
+    async def call_market_analyst(self, state: WorkflowState) -> dict[str, object]:
+        _emit(state, "agent.started", "market_analyst")
         _emit(
             state,
             "agent.activity",
-            "researcher",
+            "market_analyst",
             {"message": "Searching public sources"},
         )
-        analyze_stream = getattr(self._clients.researcher, "analyze_stream", None)
+        analyze_stream = getattr(self._clients.market_analyst, "analyze_stream", None)
         if analyze_stream is None:
             _emit(
                 state,
                 "research.search.started",
-                "researcher",
+                "market_analyst",
                 {"query_preview": sanitize_query(state["query"])},
             )
 
-        def request_factory(attempt: int) -> ResearcherInput:
-            return ResearcherInput(
+        def request_factory(attempt: int) -> MarketAnalystInput:
+            return MarketAnalystInput(
                 **_request_fields(
                     state,
                     attempt,
                     deadline_at=_child_deadline_at(
                         state,
-                        self._settings.researcher_policy.timeout_seconds,
+                        self._settings.market_analyst_policy.timeout_seconds,
                     ),
                 ),
                 query=state["query"],
             )
 
-        async def operation(request: ResearcherInput) -> ResearcherOutput:
+        async def operation(request: MarketAnalystInput) -> MarketAnalystOutput:
             if analyze_stream is not None:
                 return await analyze_stream(
                     request,
                     lambda event_type, data: _emit(
                         state,
                         event_type,
-                        "researcher",
+                        "market_analyst",
                         _safe_research_event_data(data),
                     ),
                 )
-            return await self._clients.researcher.analyze(request)
+            return await self._clients.market_analyst.analyze(request)
 
         branch = await self._invoke_branch(
-            "researcher",
+            "market_analyst",
             state,
-            self._settings.researcher_policy,
+            self._settings.market_analyst_policy,
             request_factory,
             operation,
         )
         if branch.usable:
-            response = ResearcherOutput.model_validate(branch.data)
+            response = MarketAnalystOutput.model_validate(branch.data)
             seen_urls: set[str] = set()
             for finding in response.findings:
                 url = safe_source_url(str(finding.source.url))
@@ -145,7 +148,7 @@ class WorkflowNodes:
                 _emit(
                     state,
                     "research.source_found",
-                    "researcher",
+                    "market_analyst",
                     {
                         "title": sanitize_query(finding.source.title),
                         "publisher": sanitize_query(finding.source.publisher),
@@ -155,58 +158,63 @@ class WorkflowNodes:
             _emit(
                 state,
                 "agent.activity",
-                "researcher",
+                "market_analyst",
                 {"message": f"Selected {len(seen_urls)} grounded sources"},
             )
-        return {"research_branch": branch.model_dump(mode="json")}
+        return {"market_analysis_branch": branch.model_dump(mode="json")}
 
-    @_traced_node("call_market")
-    async def call_market(self, state: WorkflowState) -> dict[str, object]:
-        _emit(state, "agent.started", "market")
+    @_traced_node("call_competitor_analyst")
+    async def call_competitor_analyst(self, state: WorkflowState) -> dict[str, object]:
+        _emit(state, "agent.started", "competitor_analyst")
         _emit(
             state,
             "agent.activity",
-            "market",
-            {"message": "Gathering market signals"},
+            "competitor_analyst",
+            {"message": "Analyzing competitors"},
         )
 
-        def request_factory(attempt: int) -> MarketAgentRequest:
-            return MarketAgentRequest(
+        def request_factory(attempt: int) -> CompetitorAnalystRequest:
+            return CompetitorAnalystRequest(
                 **_request_fields(
                     state,
                     attempt,
                     deadline_at=_child_deadline_at(
                         state,
-                        self._settings.market_policy.timeout_seconds,
+                        self._settings.competitor_analyst_policy.timeout_seconds,
                     ),
                 ),
                 query=state["query"],
             )
 
-        async def operation(request: MarketAgentRequest) -> MarketAgentOutput:
-            return await self._clients.market.analyze(request)
+        async def operation(request: CompetitorAnalystRequest) -> CompetitorAnalystOutput:
+            return await self._clients.competitor_analyst.analyze(request)
 
         branch = await self._invoke_branch(
-            "market",
+            "competitor_analyst",
             state,
-            self._settings.market_policy,
+            self._settings.competitor_analyst_policy,
             request_factory,
             operation,
         )
-        return {"market_branch": branch.model_dump(mode="json")}
+        return {"competitor_analysis_branch": branch.model_dump(mode="json")}
 
-    @_traced_node("join_research")
-    def join_research(self, state: WorkflowState) -> dict[str, object]:
-        research = AgentBranch.model_validate(state["research_branch"])
-        market = AgentBranch.model_validate(state["market_branch"])
-        warnings = [*research.warnings, *market.warnings]
+    @_traced_node("join_market_intelligence")
+    def join_market_intelligence(self, state: WorkflowState) -> dict[str, object]:
+        market_analysis = AgentBranch.model_validate(state["market_analysis_branch"])
+        competitor_analysis = AgentBranch.model_validate(state["competitor_analysis_branch"])
+        warnings = [*market_analysis.warnings, *competitor_analysis.warnings]
 
-        for name, branch in (("Researcher", research), ("Market Agent", market)):
+        for name, branch in (
+            ("Market Analyst", market_analysis),
+            ("Competitor Analyst", competitor_analysis),
+        ):
             if not branch.usable:
                 warnings.append(f"{name} unavailable after {branch.attempts} attempt(s).")
 
-        if not research.usable and not market.usable:
-            branch_errors = [branch.error for branch in (research, market) if branch.error]
+        if not market_analysis.usable and not competitor_analysis.usable:
+            branch_errors = [
+                branch.error for branch in (market_analysis, competitor_analysis) if branch.error
+            ]
             if branch_errors and all(
                 error.code is ErrorCode.DEADLINE_EXCEEDED for error in branch_errors
             ):
@@ -218,7 +226,7 @@ class WorkflowNodes:
             else:
                 error = ContractError(
                     code=ErrorCode.WORKFLOW_ABORTED,
-                    message="Researcher and Market Agent both failed",
+                    message="Market Analyst and Competitor Analyst both failed",
                     retryable=False,
                 )
             return {
@@ -229,7 +237,8 @@ class WorkflowNodes:
 
         status = (
             ContractStatus.SUCCESS
-            if research.status is ContractStatus.SUCCESS and market.status is ContractStatus.SUCCESS
+            if market_analysis.status is ContractStatus.SUCCESS
+            and competitor_analysis.status is ContractStatus.SUCCESS
             else ContractStatus.DEGRADED
         )
         return {"workflow_status": status, "warnings": warnings, "error": None}
@@ -243,12 +252,18 @@ class WorkflowNodes:
             "analyst",
             {"message": "Synthesizing research and market evidence"},
         )
-        research = AgentBranch.model_validate(state["research_branch"])
-        market = AgentBranch.model_validate(state["market_branch"])
-        research_output = (
-            ResearcherOutput.model_validate(research.data) if research.usable else None
+        market_analysis = AgentBranch.model_validate(state["market_analysis_branch"])
+        competitor_analysis = AgentBranch.model_validate(state["competitor_analysis_branch"])
+        market_analysis_output = (
+            MarketAnalystOutput.model_validate(market_analysis.data)
+            if market_analysis.usable
+            else None
         )
-        market_output = MarketAgentOutput.model_validate(market.data) if market.usable else None
+        competitor_analysis_output = (
+            CompetitorAnalystOutput.model_validate(competitor_analysis.data)
+            if competitor_analysis.usable
+            else None
+        )
 
         def request_factory(attempt: int) -> AnalysisRequest:
             return AnalysisRequest(
@@ -261,9 +276,17 @@ class WorkflowNodes:
                     ),
                 ),
                 query=state["query"],
-                research_findings=research_output.findings if research_output else [],
-                market_signals=market_output.market_signals if market_output else [],
-                competitors=market_output.competitors if market_output else [],
+                research_findings=(
+                    market_analysis_output.findings if market_analysis_output else []
+                ),
+                competitive_signals=(
+                    competitor_analysis_output.competitive_signals
+                    if competitor_analysis_output
+                    else []
+                ),
+                competitors=(
+                    competitor_analysis_output.competitors if competitor_analysis_output else []
+                ),
             )
 
         async def operation(request: AnalysisRequest) -> AnalysisResponse:
@@ -423,7 +446,7 @@ class WorkflowNodes:
         return branch
 
 
-def route_after_join(state: WorkflowState) -> str:
+def route_after_market_intelligence(state: WorkflowState) -> str:
     return "failure" if state["workflow_status"] == ContractStatus.FAILED else "analyst"
 
 

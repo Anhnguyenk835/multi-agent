@@ -5,6 +5,13 @@ export type EvidenceClass = 'reported' | 'estimated' | 'derived' | 'proxy' | 'in
 export type MarketVerdict =
   'attractive' | 'selectively_attractive' | 'mature' | 'unattractive' | 'insufficient_evidence'
 
+export interface MarketSummary {
+  id: string
+  name: string
+  definition: string
+  momentum_score: number
+}
+
 export interface MarketAnalysisResponse {
   schema_version: 'market-analysis.v1'
   market: MarketIdentity
@@ -53,13 +60,15 @@ export interface MarketOverview {
     accessibility: number
     competitive_headroom: number
   }
-  market_size: { metrics: MarketMetric[] }
+  market_size: {
+    metrics: MarketMetric[]
+    revenue_history: RevenueTrendPoint[]
+  }
   momentum: {
     direction: 'growing' | 'stable' | 'declining' | 'uncertain'
     strength: QualitativeLevel
     summary: string
     signals: TrendSignal[]
-    series: TrendPoint[]
   }
   customer_segments: CustomerSegment[]
   commercial_dynamics: CommercialDynamics
@@ -90,13 +99,13 @@ export interface TrendSignal {
   source_ids: string[]
 }
 
-export interface TrendPoint {
+export interface RevenueTrendPoint {
   period: string
-  revenue?: number | null
-  downloads?: number | null
-  active_users?: number | null
-  search_index?: number | null
-  product_count?: number | null
+  value: number
+  unit: 'USD'
+  evidence_class: EvidenceClass
+  confidence: Confidence
+  source_ids: string[]
 }
 
 export interface CustomerSegment {
@@ -182,14 +191,4 @@ export interface EvidenceSource {
   published_at?: string | null
   retrieved_at: string
   evidence_class: EvidenceClass
-}
-
-export interface AnalysisHistoryItem {
-  id: string
-  market_id: string
-  type: string
-  status: 'completed' | 'partial'
-  version: number
-  source_count: number
-  saved_at: string
 }

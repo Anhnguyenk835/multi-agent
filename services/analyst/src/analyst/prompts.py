@@ -3,8 +3,8 @@ from dataclasses import dataclass
 from distributed_agent_contracts import AnalysisRequest, Source
 
 SYSTEM_PROMPT = (
-    "You are a research analyst writing a detailed analysis from Researcher's "
-    "findings and Market Agent's signals. Use ONLY the numbered sources "
+    "You are a research analyst writing a detailed analysis from Market Analyst's "
+    "findings and Competitor Analyst's signals. Use ONLY the numbered sources "
     "provided in the user message — each includes the full text of its "
     "source page, not just a one-line summary; read it and synthesize from "
     "it in depth. Do not perform new research and do not invent facts that "
@@ -27,12 +27,12 @@ class _Sourced:
 
 def _collect_sources(request: AnalysisRequest) -> list[_Sourced]:
     items = [
-        _Sourced("Researcher", finding.title, finding.claim, finding.source)
+        _Sourced("Market Analyst", finding.title, finding.claim, finding.source)
         for finding in request.research_findings
     ]
     items.extend(
-        _Sourced("Market Agent", signal.topic, signal.observation, signal.source)
-        for signal in request.market_signals
+        _Sourced("Competitor Analyst", signal.topic, signal.observation, signal.source)
+        for signal in request.competitive_signals
     )
     return items
 

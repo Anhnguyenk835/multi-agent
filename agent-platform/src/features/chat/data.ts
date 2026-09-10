@@ -14,8 +14,8 @@ export const starterPrompts = [
 ]
 
 export const agentLabels: Record<AgentId, string> = {
-  researcher: 'Researcher',
-  market: 'Market Agent',
+  market_analyst: 'Market Analyst',
+  competitor_analyst: 'Competitor Analyst',
   analyst: 'Analyst',
   writer: 'Writer',
 }

@@ -3,22 +3,22 @@ from dataclasses import dataclass
 import grpc
 import httpx
 
+from orchestrator.clients.competitor_analyst import CompetitorAnalystClient
 from orchestrator.clients.http import AnalystClient, WriterClient
-from orchestrator.clients.market import MarketClient
+from orchestrator.clients.market_analyst import MarketAnalystClient
 from orchestrator.clients.protocols import (
     AnalystClientProtocol,
-    MarketClientProtocol,
-    ResearcherClientProtocol,
+    CompetitorAnalystClientProtocol,
+    MarketAnalystClientProtocol,
     WriterClientProtocol,
 )
-from orchestrator.clients.researcher import ResearcherClient
 from orchestrator.config import OrchestratorSettings
 
 
 @dataclass(slots=True)
 class OrchestratorClients:
-    researcher: ResearcherClientProtocol
-    market: MarketClientProtocol
+    market_analyst: MarketAnalystClientProtocol
+    competitor_analyst: CompetitorAnalystClientProtocol
     analyst: AnalystClientProtocol
     writer: WriterClientProtocol
     _http_client: httpx.AsyncClient | None = None
@@ -28,13 +28,15 @@ class OrchestratorClients:
     def create(cls, settings: OrchestratorSettings) -> "OrchestratorClients":
         http_client = httpx.AsyncClient(timeout=None)
         grpc_channel = (
-            grpc.aio.secure_channel(settings.market_agent_address, grpc.ssl_channel_credentials())
-            if settings.market_agent_use_tls
-            else grpc.aio.insecure_channel(settings.market_agent_address)
+            grpc.aio.secure_channel(
+                settings.competitor_analyst_address, grpc.ssl_channel_credentials()
+            )
+            if settings.competitor_analyst_use_tls
+            else grpc.aio.insecure_channel(settings.competitor_analyst_address)
         )
         return cls(
-            researcher=ResearcherClient(settings.researcher_url),
-            market=MarketClient(grpc_channel),
+            market_analyst=MarketAnalystClient(settings.market_analyst_url),
+            competitor_analyst=CompetitorAnalystClient(grpc_channel),
             analyst=AnalystClient(http_client, settings.analyst_url),
             writer=WriterClient(http_client, settings.writer_url),
             _http_client=http_client,

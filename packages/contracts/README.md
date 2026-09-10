@@ -10,8 +10,8 @@ of the schemas it produces or consumes.
 
 | Boundary | Source of truth | Current version |
 | --- | --- | --- |
-| Researcher RemoteGraph | `researcher.py` Pydantic input/output and `ResearcherRemoteState` | `v1` |
-| Market Agent gRPC | `proto/distributed_agent_contracts/market/v1/market.proto` | `v1` |
+| Market Analyst RemoteGraph | `market_analyst.py` Pydantic input/output and `MarketAnalystRemoteState` | `v1` |
+| Competitor Analyst gRPC | `proto/distributed_agent_contracts/competitor/v1/competitor.proto` | `v1` |
 | Analyst HTTPS | `analyst.py` Pydantic models | `v1` |
 | Writer HTTPS | `writer.py` Pydantic models | `v1` |
 | Orchestrator HTTPS | `orchestrator.py` Pydantic models | `v1` |
@@ -26,13 +26,12 @@ The shared error-code catalog is: `VALIDATION_ERROR`, `UNAUTHORIZED`,
 `INTERNAL_ERROR`. A failed response requires one of these codes; successful and
 degraded responses cannot include an error object.
 
-## Generate Market Stubs
+## Generate Competitor Stubs
 
 ```bash
-make generate-market-proto
+make generate-contract-reference-proto
 ```
 
 The command writes the reference stubs to
-`src/distributed_agent_contracts/market/v1/`. The Market Agent and
-Orchestrator each keep their own generated v1 stubs; `tests/contract_compatibility`
-checks their descriptors match.
+`src/distributed_agent_contracts/competitor/v1/`. The Competitor Analyst and
+Orchestrator consume the same generated v1 stubs.

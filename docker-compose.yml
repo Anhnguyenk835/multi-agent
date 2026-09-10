@@ -4,6 +4,55 @@ include:
   - path: ./infra/llm-gateway/docker-compose.yml
 
 services:
+  dashboard-postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: dashboard
+      POSTGRES_PASSWORD: dashboard
+      POSTGRES_USER: dashboard
+    ports:
+      - "127.0.0.1:54321:5432"
+    volumes:
+      - dashboard-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dashboard -d dashboard"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  backend-migrate:
+    build:
+      context: .
+      dockerfile: services/backend/Dockerfile
+    command: ["/app/.venv/bin/python", "-m", "backend.migrate"]
+    environment:
+      BACKEND_DATABASE_URL: postgresql://dashboard:dashboard@dashboard-postgres:5432/dashboard
+    depends_on:
+      dashboard-postgres:
+        condition: service_healthy
+    restart: "no"
+
+  backend:
+    build:
+      context: .
+      dockerfile: services/backend/Dockerfile
+    environment:
+      BACKEND_ALLOWED_ORIGINS: http://localhost:5173
+      BACKEND_DATABASE_URL: postgresql://dashboard:dashboard@dashboard-postgres:5432/dashboard
+      BACKEND_INTERNAL_API_TOKEN: ${BACKEND_INTERNAL_API_TOKEN:-local-market-analyst}
+      MARKET_ANALYST_BASE_URL: http://market-analyst:8001
+      MARKET_REPORT_ANALYST_ASSISTANT_ID: market_report_analyst
+    ports:
+      - "127.0.0.1:8010:8010"
+    depends_on:
+      backend-migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8010/ready')"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
   otel-collector:
     image: otel/opentelemetry-collector-contrib:0.136.0
     command: ["--config=/etc/otelcol-contrib/config.yaml"]
@@ -45,14 +94,14 @@ services:
       ANALYST_BACKOFF_SECONDS: ${ORCHESTRATOR_ANALYST_BACKOFF_SECONDS:-0.1}
       ANALYST_MAX_ATTEMPTS: ${ORCHESTRATOR_ANALYST_MAX_ATTEMPTS:-2}
       ANALYST_TIMEOUT_SECONDS: ${ORCHESTRATOR_ANALYST_TIMEOUT_SECONDS:-90}
-      MARKET_AGENT_ADDRESS: market-agent:50051
-      MARKET_BACKOFF_SECONDS: ${ORCHESTRATOR_MARKET_BACKOFF_SECONDS:-0.1}
-      MARKET_MAX_ATTEMPTS: ${ORCHESTRATOR_MARKET_MAX_ATTEMPTS:-2}
-      MARKET_TIMEOUT_SECONDS: ${ORCHESTRATOR_MARKET_TIMEOUT_SECONDS:-90}
-      RESEARCHER_BACKOFF_SECONDS: ${ORCHESTRATOR_RESEARCHER_BACKOFF_SECONDS:-0.1}
-      RESEARCHER_MAX_ATTEMPTS: ${ORCHESTRATOR_RESEARCHER_MAX_ATTEMPTS:-2}
-      RESEARCHER_TIMEOUT_SECONDS: ${ORCHESTRATOR_RESEARCHER_TIMEOUT_SECONDS:-90}
-      RESEARCHER_URL: http://researcher:8001
+      COMPETITOR_ANALYST_ADDRESS: competitor-analyst:50051
+      COMPETITOR_ANALYST_BACKOFF_SECONDS: ${ORCHESTRATOR_COMPETITOR_ANALYST_BACKOFF_SECONDS:-0.1}
+      COMPETITOR_ANALYST_MAX_ATTEMPTS: ${ORCHESTRATOR_COMPETITOR_ANALYST_MAX_ATTEMPTS:-2}
+      COMPETITOR_ANALYST_TIMEOUT_SECONDS: ${ORCHESTRATOR_COMPETITOR_ANALYST_TIMEOUT_SECONDS:-300}
+      MARKET_ANALYST_BACKOFF_SECONDS: ${ORCHESTRATOR_MARKET_ANALYST_BACKOFF_SECONDS:-0.1}
+      MARKET_ANALYST_MAX_ATTEMPTS: ${ORCHESTRATOR_MARKET_ANALYST_MAX_ATTEMPTS:-2}
+      MARKET_ANALYST_TIMEOUT_SECONDS: ${ORCHESTRATOR_MARKET_ANALYST_TIMEOUT_SECONDS:-90}
+      MARKET_ANALYST_URL: http://market-analyst:8001
       WRITER_BACKOFF_SECONDS: ${ORCHESTRATOR_WRITER_BACKOFF_SECONDS:-0.1}
       WRITER_MAX_ATTEMPTS: ${ORCHESTRATOR_WRITER_MAX_ATTEMPTS:-2}
       WRITER_TIMEOUT_SECONDS: ${ORCHESTRATOR_WRITER_TIMEOUT_SECONDS:-90}
@@ -62,9 +111,9 @@ services:
     depends_on:
       otel-collector:
         condition: service_started
-      researcher:
+      market-analyst:
         condition: service_healthy
-      market-agent:
+      competitor-analyst:
         condition: service_healthy
       analyst:
         condition: service_healthy
@@ -94,15 +143,57 @@ services:
       timeout: 3s
       retries: 10
 
-  researcher:
+  market-analyst:
     build:
       context: .
-      dockerfile: services/researcher/Dockerfile
+      dockerfile: services/market-analyst/Dockerfile
     ports:
       - "8001:8001"
     env_file:
-      - services/researcher/.env
+      - services/market-analyst/.env
     environment:
+      # primary + retry + fallback + fallback retry in LiteLLM
+      LLM_GATEWAY_MAX_PROVIDER_ATTEMPTS: "4"
+      LLM_GATEWAY_BASE_URL: http://litellm:4000/v1
+      LLM_MAX_OUTPUT_TOKENS: "8000"
+      BACKEND_BASE_URL: http://backend:8010
+      BACKEND_INTERNAL_API_TOKEN: ${BACKEND_INTERNAL_API_TOKEN:-local-market-analyst}
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+      OTEL_EXPORTER_OTLP_INSECURE: "true"
+      OTEL_EXPORTER_OTLP_PROTOCOL: grpc
+      OTEL_LOGS_EXPORTER: none
+      OTEL_METRICS_EXPORTER: none
+      OTEL_PROPAGATORS: tracecontext,baggage
+      OTEL_RESOURCE_ATTRIBUTES: deployment.environment.name=local,service.version=0.1.0
+      OTEL_SERVICE_NAME: market-analyst
+      OTEL_TRACES_EXPORTER: otlp
+      OTEL_TRACES_SAMPLER: parentbased_always_on
+      OTEL_PYTHON_FASTAPI_EXCLUDED_URLS: /ok
+    depends_on:
+      otel-collector:
+        condition: service_started
+      litellm:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/ok')"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 10s
+
+  competitor-analyst:
+    build:
+      context: .
+      dockerfile: services/competitor-analyst/Dockerfile
+    ports:
+      - "50051:50051"
+    env_file:
+      - services/competitor-analyst/.env
+    environment:
+      DEMO_FAILURE_DELAY_MS: ${COMPETITOR_ANALYST_FAILURE_DELAY_MS:-250}
+      DEMO_FAILURE_MODE: ${COMPETITOR_ANALYST_FAILURE_MODE:-none}
       # primary + retry + fallback + fallback retry in LiteLLM
       LLM_GATEWAY_MAX_PROVIDER_ATTEMPTS: "4"
       LLM_GATEWAY_BASE_URL: http://litellm:4000/v1
@@ -114,44 +205,7 @@ services:
       OTEL_METRICS_EXPORTER: none
       OTEL_PROPAGATORS: tracecontext,baggage
       OTEL_RESOURCE_ATTRIBUTES: deployment.environment.name=local,service.version=0.1.0
-      OTEL_SERVICE_NAME: researcher
-      OTEL_TRACES_EXPORTER: otlp
-      OTEL_TRACES_SAMPLER: parentbased_always_on
-      OTEL_PYTHON_FASTAPI_EXCLUDED_URLS: /ok
-    depends_on:
-      otel-collector:
-        condition: service_started
-      litellm:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/ok')"]
-      interval: 10s
-      timeout: 3s
-      retries: 6
-      start_period: 10s
-
-  market-agent:
-    build:
-      context: .
-      dockerfile: services/market-agent/Dockerfile
-    ports:
-      - "50051:50051"
-    env_file:
-      - services/market-agent/.env
-    environment:
-      DEMO_FAILURE_DELAY_MS: ${MARKET_FAILURE_DELAY_MS:-250}
-      DEMO_FAILURE_MODE: ${MARKET_FAILURE_MODE:-none}
-      # primary + retry + fallback + fallback retry in LiteLLM
-      LLM_GATEWAY_MAX_PROVIDER_ATTEMPTS: "4"
-      LLM_GATEWAY_BASE_URL: http://litellm:4000/v1
-      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
-      OTEL_EXPORTER_OTLP_INSECURE: "true"
-      OTEL_EXPORTER_OTLP_PROTOCOL: grpc
-      OTEL_LOGS_EXPORTER: none
-      OTEL_METRICS_EXPORTER: none
-      OTEL_PROPAGATORS: tracecontext,baggage
-      OTEL_RESOURCE_ATTRIBUTES: deployment.environment.name=local,service.version=0.1.0
-      OTEL_SERVICE_NAME: market-agent
+      OTEL_SERVICE_NAME: competitor-analyst
       OTEL_TRACES_EXPORTER: otlp
       OTEL_TRACES_SAMPLER: parentbased_always_on
     depends_on:
@@ -160,7 +214,7 @@ services:
       litellm:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "uv", "run", "--frozen", "--package", "market-agent", "python", "-c", "import grpc; from grpc_health.v1 import health_pb2, health_pb2_grpc; channel = grpc.insecure_channel('localhost:50051'); response = health_pb2_grpc.HealthStub(channel).Check(health_pb2.HealthCheckRequest(), timeout=2); assert response.status == health_pb2.HealthCheckResponse.SERVING"]
+      test: ["CMD", "uv", "run", "--frozen", "--package", "competitor-analyst", "python", "-c", "import grpc; from grpc_health.v1 import health_pb2, health_pb2_grpc; channel = grpc.insecure_channel('localhost:50051'); response = health_pb2_grpc.HealthStub(channel).Check(health_pb2.HealthCheckRequest(), timeout=2); assert response.status == health_pb2.HealthCheckResponse.SERVING"]
       interval: 10s
       timeout: 3s
       retries: 3
@@ -238,4 +292,5 @@ services:
       retries: 3
 
 volumes:
+  dashboard-postgres-data:
   orchestrator-postgres-data:

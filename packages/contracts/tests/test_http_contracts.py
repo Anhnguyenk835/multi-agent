@@ -10,8 +10,8 @@ from distributed_agent_contracts import (
     ErrorCode,
     ExecutiveBrief,
     Finding,
-    ResearcherInput,
-    ResearcherOutput,
+    MarketAnalystInput,
+    MarketAnalystOutput,
     Source,
     render_citation_links,
 )
@@ -39,8 +39,8 @@ def finding() -> Finding:
     )
 
 
-def test_researcher_input_serializes_to_remote_state() -> None:
-    request = ResearcherInput(query="AI coding agents", **metadata())
+def test_market_analyst_input_serializes_to_remote_state() -> None:
+    request = MarketAnalystInput(query="AI coding agents", **metadata())
 
     payload = request.model_dump(mode="json")
 
@@ -70,7 +70,7 @@ def test_successful_brief_requires_content() -> None:
 
 
 def test_degraded_response_allows_warnings_without_error() -> None:
-    response = ResearcherOutput(
+    response = MarketAnalystOutput(
         status=ContractStatus.DEGRADED,
         findings=[finding()],
         warnings=["A market source was unavailable."],
@@ -82,7 +82,7 @@ def test_degraded_response_allows_warnings_without_error() -> None:
 
 
 def test_failed_response_requires_a_canonical_error_code() -> None:
-    response = ResearcherOutput(
+    response = MarketAnalystOutput(
         status=ContractStatus.FAILED,
         error=ContractError(
             code=ErrorCode.UPSTREAM_UNAVAILABLE,
@@ -98,7 +98,7 @@ def test_failed_response_requires_a_canonical_error_code() -> None:
 
 def test_failed_response_rejects_unknown_error_code() -> None:
     with pytest.raises(ValidationError):
-        ResearcherOutput(
+        MarketAnalystOutput(
             status=ContractStatus.FAILED,
             error={"code": "UNKNOWN_ERROR", "message": "Unsupported code"},
             **metadata(),
@@ -107,7 +107,7 @@ def test_failed_response_rejects_unknown_error_code() -> None:
 
 def test_success_response_rejects_an_error_object() -> None:
     with pytest.raises(ValidationError, match="only failed responses"):
-        ResearcherOutput(
+        MarketAnalystOutput(
             status=ContractStatus.SUCCESS,
             error=ContractError(
                 code=ErrorCode.INTERNAL_ERROR,
@@ -129,7 +129,7 @@ def test_source_metadata_rejects_invalid_url() -> None:
 
 def test_contracts_reject_unknown_fields() -> None:
     with pytest.raises(ValidationError):
-        ResearcherInput(query="AI coding agents", unexpected_field="value", **metadata())
+        MarketAnalystInput(query="AI coding agents", unexpected_field="value", **metadata())
 
 
 def test_source_content_is_optional_and_uncapped() -> None:

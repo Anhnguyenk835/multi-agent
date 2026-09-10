@@ -49,7 +49,7 @@ Generate fresh virtual keys only after an intentional reset:
 ```bash
 export LLM_GATEWAY_ADMIN_URL=http://127.0.0.1:4000
 export LITELLM_MASTER_KEY=<gateway-master-key>
-./scripts/provision-virtual-key.sh researcher
+./scripts/provision-virtual-key.sh market-analyst
 ```
 
 Store each generated value only as that service's `LLM_GATEWAY_API_KEY`. The

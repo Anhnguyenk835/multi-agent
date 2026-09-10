@@ -2,7 +2,7 @@
 set -euo pipefail
 
 usage() {
-  printf 'Usage: %s <researcher|market-agent|analyst|writer>\n' "$0" >&2
+  printf 'Usage: %s <market-analyst|competitor-analyst|analyst|writer>\n' "$0" >&2
   exit 64
 }
 
@@ -20,7 +20,7 @@ require_env LLM_GATEWAY_ADMIN_URL
 require_env LITELLM_MASTER_KEY
 
 case $1 in
-  researcher)
+  market-analyst)
     route=research-fast
     budget=25
     rpm=30
@@ -28,7 +28,7 @@ case $1 in
     parallel=4
     output_tokens=2000
     ;;
-  market-agent)
+  competitor-analyst)
     route=market-standard
     budget=25
     rpm=20

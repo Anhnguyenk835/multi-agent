@@ -36,7 +36,7 @@ resource "google_project_iam_member" "cloudsql_client" {
 }
 
 module "secrets" {
-  source                         = "../../../../services/researcher/infra/modules/secrets"
+  source                         = "../../../../services/market-analyst/infra/modules/secrets"
   project_id                     = var.project_id
   name_prefix                    = "llm-gateway-"
   secret_names                   = ["OPENAI_API_KEY", "GEMINI_API_KEY", "ANTHROPIC_API_KEY", "LITELLM_MASTER_KEY", "LITELLM_SALT_KEY"]
@@ -91,7 +91,7 @@ resource "google_secret_manager_secret_iam_member" "config_accessor" {
 }
 
 module "cloud_run" {
-  source                            = "../../../../services/researcher/infra/modules/cloud_run_service"
+  source                            = "../../../../services/market-analyst/infra/modules/cloud_run_service"
   project_id                        = var.project_id
   region                            = var.region
   service_name                      = "llm-gateway"

@@ -1,8 +1,8 @@
 import { lazy, Suspense } from 'react'
 import { Navigate, Route, Routes, useParams } from 'react-router-dom'
-import { defaultMarketId } from '../features/dashboard/data'
 
 const ChatPage = lazy(() => import('../features/chat/ChatPage'))
+const DashboardIndexPage = lazy(() => import('../features/dashboard/DashboardIndexPage'))
 const MarketWorkspacePage = lazy(() => import('../features/dashboard/MarketWorkspacePage'))
 
 function ChatRoute() {
@@ -17,7 +17,7 @@ export default function AppRouter() {
     >
       <Routes>
         <Route path="/chat/:conversationId" element={<ChatRoute />} />
-        <Route path="/dashboard/*" element={<Navigate replace to={`/markets/${defaultMarketId}`} />} />
+        <Route path="/dashboard/*" element={<DashboardIndexPage />} />
         <Route path="/markets/:marketId" element={<MarketWorkspacePage />} />
         <Route path="/" element={<Navigate replace to="/chat/demo" />} />
         <Route path="*" element={<Navigate replace to="/chat/demo" />} />

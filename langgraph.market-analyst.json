@@ -1,0 +1,16 @@
+{
+  "$schema": "https://langgra.ph/schema.json",
+  "python_version": "3.12",
+  "dependencies": [
+    "./packages/contracts",
+    "./services/market-analyst"
+  ],
+  "graphs": {
+    "market_analyst": "./services/market-analyst/src/market_analyst/graph.py:build_graph",
+    "market_report_analyst": "./services/market-analyst/src/market_analyst/market_graph.py:build_market_graph"
+  },
+  "env": "./services/market-analyst/.env",
+  "dockerfile_lines": [
+    "RUN mkdir -p /deps && printf '[tool.uv.workspace]\\nmembers = [\"contracts\", \"market-analyst\"]\\n' > /deps/pyproject.toml"
+  ]
+}

@@ -33,8 +33,8 @@ class WorkflowState(TypedDict, total=False):
     attempt: int
     deadline_at: str | None
     query: str
-    research_branch: dict[str, Any]
-    market_branch: dict[str, Any]
+    market_analysis_branch: dict[str, Any]
+    competitor_analysis_branch: dict[str, Any]
     analysis_branch: dict[str, Any]
     writer_branch: dict[str, Any]
     workflow_status: str

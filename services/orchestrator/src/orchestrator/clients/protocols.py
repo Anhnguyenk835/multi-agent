@@ -3,21 +3,24 @@ from typing import Protocol
 from distributed_agent_contracts import (
     AnalysisRequest,
     AnalysisResponse,
-    ResearcherInput,
-    ResearcherOutput,
+    MarketAnalystInput,
+    MarketAnalystOutput,
     WriterRequest,
     WriterResponse,
 )
 
-from orchestrator.clients.market import MarketAgentOutput, MarketAgentRequest
+from orchestrator.clients.competitor_analyst import (
+    CompetitorAnalystOutput,
+    CompetitorAnalystRequest,
+)
 
 
-class ResearcherClientProtocol(Protocol):
-    async def analyze(self, request: ResearcherInput) -> ResearcherOutput: ...
+class MarketAnalystClientProtocol(Protocol):
+    async def analyze(self, request: MarketAnalystInput) -> MarketAnalystOutput: ...
 
 
-class MarketClientProtocol(Protocol):
-    async def analyze(self, request: MarketAgentRequest) -> MarketAgentOutput: ...
+class CompetitorAnalystClientProtocol(Protocol):
+    async def analyze(self, request: CompetitorAnalystRequest) -> CompetitorAnalystOutput: ...
 
 
 class AnalystClientProtocol(Protocol):

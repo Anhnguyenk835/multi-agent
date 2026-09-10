@@ -22,7 +22,7 @@ members = [
 
 [tool.ruff]
 extend-exclude = [
-    "packages/contracts/src/distributed_agent_contracts/market/v1/*_pb2*.py",
+    "packages/contracts/src/distributed_agent_contracts/competitor/v1/*_pb2*.py",
 ]
 line-length = 100
 target-version = "py312"

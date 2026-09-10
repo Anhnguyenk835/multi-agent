@@ -26,7 +26,7 @@ def request_payload() -> dict[str, object]:
                 },
             }
         ],
-        "market_signals": [],
+        "competitive_signals": [],
         "competitors": ["Example Competitor"],
     }
 

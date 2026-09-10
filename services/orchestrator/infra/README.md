@@ -17,7 +17,7 @@ infra/
 
 ## Deploy
 
-Deploy `analyst`, `writer`, `researcher`, and `market-agent` first, and note
+Deploy `analyst`, `writer`, `market-analyst`, and `competitor-analyst` first, and note
 each one's `url` output.
 
 The first deploy is two applies: the Cloud Run service can't be created

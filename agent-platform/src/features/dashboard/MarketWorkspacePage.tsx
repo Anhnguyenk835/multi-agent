@@ -1,12 +1,13 @@
-import { Bot, Check, ExternalLink, X } from 'lucide-react'
+import { X } from 'lucide-react'
 import { useState } from 'react'
-import { Navigate, useParams, useSearchParams } from 'react-router-dom'
-import { IconButton } from '../../components/ui'
+import { useParams, useSearchParams } from 'react-router-dom'
+import { Button, IconButton } from '../../components/ui'
 import { DashboardShell } from './components/DashboardShell'
-import { SectionHeader, StatusPill } from './components/DashboardPrimitives'
+import { EvidenceDrawer } from './components/EvidenceDrawer'
+import { StatusPill } from './components/DashboardPrimitives'
 import { MarketCompetitors } from './components/MarketCompetitors'
 import { MarketOverview } from './components/MarketOverview'
-import { analysisHistory, marketAnalysisReports } from './data'
+import { useMarketWorkspace } from './hooks/useDashboardData'
 import type { Competitor, MarketView } from './types'
 
 const titleCase = (value: string) =>
@@ -93,28 +94,46 @@ function CompetitorDrawer({ competitor, onClose }: { competitor: Competitor; onC
 
 export default function MarketWorkspacePage() {
   const { marketId } = useParams()
+  const { data, error, loading, retry } = useMarketWorkspace(marketId)
   const [searchParams, setSearchParams] = useSearchParams()
   const [query, setQuery] = useState('')
-  const [notice, setNotice] = useState('')
   const [selectedCompetitor, setSelectedCompetitor] = useState<Competitor | null>(null)
-  const response = marketAnalysisReports.find((item) => item.market.id === marketId)
+  const [selectedEvidenceIds, setSelectedEvidenceIds] = useState<string[]>([])
+  if (loading) {
+    return <div className="grid min-h-screen place-items-center text-sm text-slate-500">Loading market analysis...</div>
+  }
+  if (error || !data) {
+    return (
+      <main className="grid min-h-screen place-items-center bg-slate-50 p-6 text-center">
+        <div>
+          <h1 className="text-lg font-semibold text-slate-900">Market analysis unavailable</h1>
+          <p className="mt-2 text-sm text-slate-500">{error || 'Market not found.'}</p>
+          <Button className="mt-4" onClick={retry}>
+            Retry
+          </Button>
+        </div>
+      </main>
+    )
+  }
 
-  if (!response) return <Navigate replace to="/dashboard" />
-
+  const { report: response, markets } = data
   const { market, report, competitors, evidence } = response
   const view: MarketView = searchParams.get('view') === 'competitors' ? 'competitors' : 'overview'
-  const history = analysisHistory.filter((item) => item.market_id === market.id)
+  const selectedEvidence = evidence.filter((source) => selectedEvidenceIds.includes(source.id))
   const changeView = (next: MarketView) => setSearchParams(next === 'overview' ? {} : { view: next })
   const openEvidence = (sourceIds: string[]) => {
-    const publishers = evidence
-      .filter((source) => sourceIds.includes(source.id))
-      .map((source) => source.publisher)
-      .join(', ')
-    setNotice(`${sourceIds.length} evidence ${sourceIds.length === 1 ? 'source' : 'sources'}: ${publishers}`)
+    setSelectedCompetitor(null)
+    setSelectedEvidenceIds(sourceIds)
   }
 
   return (
-    <DashboardShell title={market.name} section="Market" searchQuery={query} onSearchChange={setQuery}>
+    <DashboardShell
+      title={market.name}
+      section="Market"
+      searchQuery={query}
+      onSearchChange={setQuery}
+      markets={markets}
+    >
       <div className="mx-auto w-full max-w-[1440px] px-[34px] pt-[34px] pb-[52px] max-md:px-5 max-sm:px-4 max-sm:pt-6">
         <div className="mb-7 flex min-h-16 items-start justify-between gap-6">
           <div className="min-w-0">
@@ -125,7 +144,6 @@ export default function MarketWorkspacePage() {
               <StatusPill tone={report.status === 'completed' ? 'green' : 'amber'}>
                 {titleCase(report.status)}
               </StatusPill>
-              <span>Report v{report.version}</span>
               <span>{report.data_period}</span>
               <span>{report.overall_confidence}% confidence</span>
               <StatusPill tone={report.freshness === 'current' ? 'blue' : 'amber'}>
@@ -146,7 +164,6 @@ export default function MarketWorkspacePage() {
           <span className="rounded-md border border-slate-200 bg-white px-2 py-1">
             {market.scope.platforms.join(' · ')}
           </span>
-          <small className="ml-auto text-slate-400 max-sm:ml-0 max-sm:w-full">Schema {response.schema_version}</small>
         </div>
 
         <div className="flex gap-7 border-b border-slate-200" role="tablist" aria-label="Market views">
@@ -172,49 +189,7 @@ export default function MarketWorkspacePage() {
         </div>
 
         {view === 'overview' ? (
-          <>
-            <MarketOverview report={response} onOpenEvidence={openEvidence} />
-            <section className="mt-9" id="analysis-history">
-              <SectionHeader eyebrow="Version history" title="Saved market reports" />
-              <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
-                {history.map((item) => (
-                  <article
-                    className="grid grid-cols-[36px_minmax(0,1fr)_80px_80px_auto_32px] items-center gap-3 border-b border-slate-100 p-3 last:border-b-0 max-sm:grid-cols-[36px_minmax(0,1fr)_auto_32px]"
-                    key={item.id}
-                  >
-                    <span
-                      className={`grid size-9 place-items-center rounded-md ${item.status === 'partial' ? 'bg-amber-50 text-amber-700' : 'bg-blue-50 text-blue-600'}`}
-                    >
-                      <Bot size={17} />
-                    </span>
-                    <div className="flex min-w-0 flex-col">
-                      <strong className="text-xs text-slate-800">{item.type}</strong>
-                      <small className="mt-1 truncate text-[10px] text-slate-400">
-                        {item.id} · {item.saved_at}
-                      </small>
-                    </div>
-                    <span className="flex flex-col max-sm:hidden">
-                      <strong className="text-xs text-slate-700">v{item.version}</strong>
-                      <small className="text-[10px] text-slate-400">report</small>
-                    </span>
-                    <span className="flex flex-col max-sm:hidden">
-                      <strong className="text-xs text-slate-700">{item.source_count}</strong>
-                      <small className="text-[10px] text-slate-400">sources</small>
-                    </span>
-                    <StatusPill tone={item.status === 'completed' ? 'green' : 'amber'}>
-                      {titleCase(item.status)}
-                    </StatusPill>
-                    <IconButton
-                      onClick={() => setNotice(`Opening saved report ${item.id}.`)}
-                      label={`Open ${item.type}`}
-                    >
-                      <ExternalLink size={15} />
-                    </IconButton>
-                  </article>
-                ))}
-              </div>
-            </section>
-          </>
+          <MarketOverview report={response} onOpenEvidence={openEvidence} />
         ) : (
           <MarketCompetitors
             analysis={competitors}
@@ -224,25 +199,11 @@ export default function MarketWorkspacePage() {
           />
         )}
       </div>
-
-      {notice && (
-        <div
-          className="fixed right-6 bottom-6 z-50 flex max-w-[420px] items-center gap-2.5 rounded-lg bg-slate-900 px-4 py-3 text-xs text-white shadow-xl max-sm:right-4 max-sm:bottom-4 max-sm:left-4"
-          role="status"
-        >
-          <Check className="shrink-0 text-emerald-400" size={16} />
-          <span className="min-w-0 flex-1">{notice}</span>
-          <button
-            className="grid size-6 place-items-center rounded text-slate-300 hover:bg-white/10 hover:text-white"
-            onClick={() => setNotice('')}
-            aria-label="Dismiss notification"
-          >
-            <X size={14} />
-          </button>
-        </div>
-      )}
       {selectedCompetitor && (
         <CompetitorDrawer competitor={selectedCompetitor} onClose={() => setSelectedCompetitor(null)} />
+      )}
+      {selectedEvidence.length > 0 && (
+        <EvidenceDrawer sources={selectedEvidence} onClose={() => setSelectedEvidenceIds([])} />
       )}
     </DashboardShell>
   )

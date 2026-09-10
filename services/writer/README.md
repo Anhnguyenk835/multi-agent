@@ -16,7 +16,7 @@ flowchart LR
   Asked for a complete, detailed markdown brief (title, summary, insights,
   recommendations as prose/sections) — not a fixed number of bullets.
 - Cannot see raw research — `WriterRequest` has no `research_findings` or
-  `market_signals` fields, and `citations` are content-free (title/url/
+  `competitive_signals` fields, and `citations` are content-free (title/url/
   publisher only), never the full source pages Analyst read. Structural,
   not just by prompt wording.
 - Citation is by construction, not validation: the model cites with bare
